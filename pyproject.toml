@@ -1,0 +1,10 @@
+[project]
+name = "chatadmin"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.25.0",
+    "pydantic-settings>=2.13.1",
+    "pydentic>=0.0.1.dev3",
+]
