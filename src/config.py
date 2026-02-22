@@ -2,7 +2,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
+class Token(BaseSettings):
     # откуда читать .env и как интерпретировать
     model_config = SettingsConfigDict(
         env_file="../.env",
@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     )
 
     BOT_TOKEN: str = Field(..., alias="BOT_TOKEN")
+
+
+
+class DB(BaseSettings):
+    db_path: str = Field("bot.db", alias="DB_PATH")
+
+class Settings():
+    token: Token = Token()
+    db: DB = DB()
 
 
 settings = Settings()
