@@ -4,8 +4,8 @@ from aiogram import Router, F
 from aiogram.types import Message
 
 from src.constants import UTC_PLUS_5, KEYWORDS
-from src.database import db
-from src.database.db import StoredMessage
+from src.database.repo.repo_clean import repo_clean
+
 from src.handlers.buttons_txt import button_1_txt, button_2_txt
 
 caption_router = Router()
@@ -50,8 +50,7 @@ async def store_all_messages(message: Message):
         username = None
         full_name = message.sender_chat.title if message.sender_chat else "Unknown"
 
-    await db.upsert_message(
-        StoredMessage(
+    await repo_clean.upsert_message(
             chat_id=message.chat.id,
             message_id=message.message_id,
             message_short=(message.text or message.caption)[0:100],
@@ -61,6 +60,5 @@ async def store_all_messages(message: Message):
             user_id=user_id,
             username=username,
             full_name=full_name,
-        )
     )
 

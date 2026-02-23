@@ -8,10 +8,16 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
 from src.constants import UTC_PLUS_5
-from src.database import db
-from src.handlers.buttons_txt import button_1_txt, button_2_txt
+from src.database.repo.repo_clean import repo_clean
+from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt
 
 start_router = Router()
+
+def _normalize(text: str) -> str:
+    # Нормализация для сравнения "повторов"
+    # - убрать лишние пробелы
+    # - привести к lower
+    return " ".join((text or "").strip().lower().split())
 
 
 
@@ -21,7 +27,8 @@ async def start_handler(message: Message):
     kb = ReplyKeyboardBuilder()
     kb.button(text=button_1_txt)
     kb.button(text=button_2_txt)
-    kb.adjust(2)
+    kb.button(text=button_3_txt)
+    kb.adjust(1)
 
     await message.answer(
             "Выберите действие:",
@@ -30,7 +37,7 @@ async def start_handler(message: Message):
 
 @start_router.message(F.chat.type.in_({"group", "supergroup"}), F.text == "/bind")
 async def bind_group(message: Message):
-    await db.set_user_active_chat(user_id=message.from_user.id, chat_id=message.chat.id)
+    await repo_clean.set_user_active_chat(user_id=message.from_user.id, chat_id=message.chat.id)
     await message.answer("Группа привязана.")
 
 # Обработка нажатия первой кнопки
@@ -39,7 +46,7 @@ async def cleanup_week(message: Message) -> None:
 
     user_id = message.from_user.id
 
-    group_chat_id = await db.get_user_active_chat(user_id)
+    group_chat_id = await repo_clean.get_user_active_chat(user_id)
     if not group_chat_id:
         await message.answer("Сначала зайди в нужную группу и напиши /bind")
         return
@@ -48,7 +55,7 @@ async def cleanup_week(message: Message) -> None:
     since_ts = int(since_dt.timestamp())
 
 
-    ids = await db.get_message_ids_without_keywords_since(group_chat_id, since_ts)
+    ids = await repo_clean.get_message_ids_without_keywords_since(group_chat_id, since_ts)
 
     if not ids:
         await message.answer("За последнюю неделю нечего удалять ✅")
@@ -57,15 +64,12 @@ async def cleanup_week(message: Message) -> None:
     deleted = 0
     skipped = 0
 
-    print('ids', ids)
-
     for mid in ids:
         try:
             await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
-            await db.delete_record(group_chat_id, mid)
-            print('mid', mid)
+            await repo_clean.delete_record(group_chat_id, mid)
             deleted += 1
-            await asyncio.sleep(0.05)  # чуть-чуть против flood
+            await asyncio.sleep(0.05)  # против flood
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after + 0.5)
         except TelegramForbiddenError:
@@ -80,17 +84,75 @@ async def cleanup_week(message: Message) -> None:
 
     await message.answer(f"Готово. Удалено: {deleted}, пропущено: {skipped}")
 
-# (необязательно) обработка второй кнопки
 @start_router.message(F.text == button_2_txt)
-async def button_two_handler(message: Message):
-    #await message.answer("Вы нажали кнопку 2")
+async def delete_repeat_messages(message: Message):
+    if not message.from_user:
+        await message.answer("Не могу определить пользователя.")
+        return
+
+    user_id = message.from_user.id
+    group_chat_id = await repo_clean.get_user_active_chat(user_id)
+    if not group_chat_id:
+        await message.answer("Сначала в нужной группе напиши /bind")
+        return
+
+    since_dt = datetime.now(UTC_PLUS_5) - timedelta(days=7)
+    since_ts = int(since_dt.timestamp())
+
+    rows = await repo_clean.get_messages_since(group_chat_id, since_ts)
+    if not rows:
+        await message.answer("За неделю нет сохранённых сообщений в БД.")
+        return
+
+    seen: set[str] = set()
+    to_delete: list[int] = []
+
+    # rows уже отсортированы по времени ASC -> первое встретившееся оставляем
+    for mid, _, text_short in rows:
+        key = _normalize(text_short)
+        if not key:
+            continue
+        if key in seen:
+            to_delete.append(mid)
+        else:
+            seen.add(key)
+
+    if not to_delete:
+        await message.answer("Повторов за неделю не найдено ✅")
+        return
+
+    deleted = 0
+    skipped = 0
+
+    for mid in to_delete:
+        try:
+            await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
+            await repo_clean.delete_record(group_chat_id, mid)
+            deleted += 1
+            await asyncio.sleep(0.05)
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after + 0.5)
+        except TelegramForbiddenError:
+            await message.answer("❌ Нет прав удалять сообщения в группе (бот должен быть админом с Delete messages).")
+            return
+        except TelegramBadRequest as e:
+            # Часто: message can't be deleted / message to delete not found
+            skipped += 1
+            await repo_clean.delete_record(group_chat_id, mid)
+
+    await message.answer(f"Готово ✅ Удалено повторов: {deleted}, пропущено: {skipped}")
+
+@start_router.message(F.text == button_3_txt)
+async def check_delete_availability(message: Message):
 
     user_id = message.from_user.id
 
-    group_chat_id = await db.get_user_active_chat(user_id)
+    group_chat_id = await repo_clean.get_user_active_chat(user_id)
     member = await message.bot.get_chat_member(group_chat_id, message.bot.id)
     # member — ChatMember. У админа есть can_delete_messages
     can_delete = getattr(member, "can_delete_messages", False)
     if not can_delete:
         await message.answer("❌ У бота нет права Delete messages в группе. Дай право и попробуй снова.")
         return
+    else:
+        await message.answer("✅ У бота есть право Delete messages в группе.")

@@ -6,6 +6,8 @@ requires-python = ">=3.12"
 dependencies = [
     "aiogram>=3.25.0",
     "aiosqlite>=0.22.1",
+    "alembic>=1.18.4",
     "pydantic-settings>=2.13.1",
     "pydentic>=0.0.1.dev3",
+    "sqlalchemy>=2.0.46",
 ]

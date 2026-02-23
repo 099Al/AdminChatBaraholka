@@ -15,7 +15,8 @@ class Token(BaseSettings):
 
 
 class DB(BaseSettings):
-    db_path: str = Field("bot.db", alias="DB_PATH")
+    db_path: str = Field("../bot.db", alias="DB_PATH")
+    db_url: str = Field("sqlite+aiosqlite:///bot.db", alias="DB_URL")
 
 class Settings():
     token: Token = Token()
