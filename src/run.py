@@ -27,7 +27,7 @@ async def main():
     try:
         await dp.start_polling(bot)
     finally:
-        await db.dispose()
+        await settings.db.dispose()
 
 if __name__ == "__main__":
     asyncio.run(main())
