@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import select, delete
 from sqlalchemy.dialects.sqlite import insert
 
-from src.constants import UTC_PLUS_5
+from src.constants import UTC_PLUS_5, ADMINS
 from src.database.connect import db
 from src.database.models.model_clean import MessageModel, UserChatBindingModel
 
@@ -58,6 +58,7 @@ class RepoClean:
                 MessageModel.chat_id == chat_id,
                 MessageModel.date_ts >= since_ts,
                 MessageModel.has_keywords == 0,
+                ~MessageModel.user_id.in_(ADMINS),
             )
             .order_by(MessageModel.date_ts.asc())
         )
