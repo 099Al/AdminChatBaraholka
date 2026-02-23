@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: chat-admin-bot
+    restart: always
+    env_file:
+      - ../.env.prod
+    volumes:
+      - ../data:/app/data
+    working_dir: /app
+    command: ["uv", "run", "python", "-m", "src.run"]
+
+networks:
+  default:
+    name: chat-admin-network
