@@ -1,11 +1,15 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 class Token(BaseSettings):
     # откуда читать .env и как интерпретировать
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
         extra="ignore",  # игнорировать лишние переменные в .env
     )
@@ -15,12 +19,36 @@ class Token(BaseSettings):
 
 
 class DB(BaseSettings):
-    db_path: str = Field("../bot.db", alias="DB_PATH")
-    db_url: str = Field("sqlite+aiosqlite:///bot.db", alias="DB_URL")
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-class Settings():
-    token: Token = Token()
-    db: DB = DB()
+    env: str = Field("DEV", alias="ENV")
+    db_url: str | None = Field(None, alias="DB_URL")
+
+    def model_post_init(self, __context):
+        # если DB_URL задан — используем его как есть
+        if self.db_url:
+            return
+
+        if self.env.upper() == "PROD":
+            # docker + volume /app/data
+            self.db_url = "sqlite+aiosqlite:////app/data/bot.db"
+        else:
+            db_file = BASE_DIR / "data" / "bot.db"
+            db_file.parent.mkdir(parents=True, exist_ok=True)  # <-- создаём папку data
+            self.db_url = f"sqlite+aiosqlite:///{db_file.as_posix()}"
+
+
+class Settings:
+    token: Token
+    db: DB
+
+    def __init__(self):
+        self.token = Token()
+        self.db = DB()
 
 
 settings = Settings()
