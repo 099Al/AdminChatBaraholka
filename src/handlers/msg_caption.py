@@ -32,7 +32,10 @@ def _has_required_keywords(text: str | None) -> bool:
 async def store_all_messages(message: Message):
     # интересует только то, что можно проверять по тексту/подписи
     text = message.text or message.caption
-    kw = 1 if _has_required_keywords(text) else 0
+    if message.reply_to_message:
+        kw = 2
+    else:
+        kw = 1 if _has_required_keywords(text) else 0
 
     # date у aiogram Message — datetime
     date_dt = message.date.astimezone(UTC_PLUS_5)
