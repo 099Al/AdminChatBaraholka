@@ -16,7 +16,13 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 # затем код
-COPY . .
+# COPY . .
+
+# user
+RUN useradd -m appuser
+USER appuser
+# code
+COPY --chown=appuser:appuser . .
 
 
 CMD ["uv", "run", "python", "-m", "src.run"]
