@@ -11,6 +11,7 @@ class MessageModel(Base):
     message_id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     message_short: Mapped[str] = mapped_column(Text, default="")
+    message_hash: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text)
     date_ts: Mapped[int] = mapped_column(Integer, index=True)
     has_keywords: Mapped[int] = mapped_column(Integer, index=True)  # 0/1

@@ -1,3 +1,4 @@
+import hashlib
 from datetime import timezone
 
 from aiogram import Router, F
@@ -21,6 +22,20 @@ def _has_required_keywords(text: str | None) -> bool:
     # Ищем вхождение (без учета регистра)
     t = text.lower()
     return any(k.lower() in t for k in KEYWORDS)
+
+
+def _hash_message(text: str | None) -> str | None:
+    """
+    Возвращает SHA256 хеш текста сообщения.
+    Если текста нет — возвращает None.
+    """
+    if not text:
+        return None
+
+    # нормализация (чтобы "Hello  " и "hello" считались одинаковыми)
+    normalized = " ".join(text.strip().lower().split())
+
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 @caption_router.message(
@@ -57,6 +72,7 @@ async def store_all_messages(message: Message):
             chat_id=message.chat.id,
             message_id=message.message_id,
             message_short=(message.text or message.caption)[0:100],
+            message_hash=_hash_message(message.text or message.caption),
             created_at=date_dt,
             date_ts=date_ts,
             has_keywords=kw,

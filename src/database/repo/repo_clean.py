@@ -17,6 +17,7 @@ class RepoClean:
         chat_id: int,
         message_id: int,
         message_short: str,
+        message_hash: str,
         created_at: str,
         date_ts: int,
         has_keywords: int,
@@ -28,6 +29,7 @@ class RepoClean:
             chat_id=chat_id,
             message_id=message_id,
             message_short=message_short,
+            message_hash=message_hash,
             created_at=created_at,
             date_ts=date_ts,
             has_keywords=has_keywords,
@@ -38,6 +40,7 @@ class RepoClean:
             index_elements=[MessageModel.chat_id, MessageModel.message_id],
             set_=dict(
                 message_short=message_short,
+                message_hash=message_hash,
                 created_at=created_at,
                 date_ts=date_ts,
                 has_keywords=has_keywords,
