@@ -108,9 +108,9 @@ def _full_write_permissions() -> ChatPermissions:
 @start_router.message(CommandStart())
 async def start_handler(message: Message):
     kb = ReplyKeyboardBuilder()
+    kb.button(text=button_3_txt)
     kb.button(text=button_1_txt)
     kb.button(text=button_2_txt)
-    kb.button(text=button_3_txt)
     kb.button(text=button_4_txt)
     kb.adjust(1)
 
