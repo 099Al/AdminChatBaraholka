@@ -7,7 +7,7 @@ from sqlalchemy.dialects.sqlite import insert
 
 from src.constants import UTC_PLUS_5, ADMINS
 from src.database.connect import db
-from src.database.models.model_clean import MessageModel, UserChatBindingModel
+from src.database.models.model_clean import AdminModel, MessageModel, UserChatBindingModel
 
 
 class RepoClean:
@@ -116,5 +116,58 @@ class RepoClean:
         async with db.session() as session:
             res = await session.execute(stmt)
             return [(int(mid), int(ts), str(text or "")) for (mid, ts, text) in res.all()]
+
+    async def add_admin(
+        self,
+        user_id: int,
+        username: str | None = None,
+        full_name: str | None = None,
+    ) -> None:
+        now = datetime.now(UTC_PLUS_5)
+        stmt = insert(AdminModel).values(
+            user_id=user_id,
+            added_at_ts=int(now.timestamp()),
+            created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+            username=username,
+            full_name=full_name,
+        ).on_conflict_do_nothing(
+            index_elements=[AdminModel.user_id],
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def remove_admin(self, user_id: int) -> None:
+        stmt = delete(AdminModel).where(AdminModel.user_id == user_id)
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def is_admin(self, user_id: int) -> bool:
+        stmt = select(AdminModel.user_id).where(AdminModel.user_id == user_id)
+
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return res.first() is not None
+
+    async def get_admins(self) -> list[tuple[int, str | None, str | None, str]]:
+        stmt = (
+            select(
+                AdminModel.user_id,
+                AdminModel.username,
+                AdminModel.full_name,
+                AdminModel.created_at,
+            )
+            .order_by(AdminModel.user_id.asc())
+        )
+
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return [
+                (int(user_id), username, full_name, str(created_at))
+                for user_id, username, full_name, created_at in res.all()
+            ]
 
 repo_clean = RepoClean()

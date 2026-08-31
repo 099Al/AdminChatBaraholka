@@ -28,3 +28,13 @@ class UserChatBindingModel(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     chat_id: Mapped[int] = mapped_column(BigInteger)
     bound_at_ts: Mapped[int] = mapped_column(Integer)
+
+
+class AdminModel(Base):
+    __tablename__ = "admins"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    added_at_ts: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[str] = mapped_column(Text)
+    username: Mapped[str | None] = mapped_column(Text, nullable=True)
+    full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
