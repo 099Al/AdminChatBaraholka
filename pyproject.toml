@@ -10,4 +10,5 @@ dependencies = [
     "pydantic-settings>=2.13.1",
     "pydentic>=0.0.1.dev3",
     "sqlalchemy>=2.0.46",
+    "telethon>=1.42.0",
 ]
