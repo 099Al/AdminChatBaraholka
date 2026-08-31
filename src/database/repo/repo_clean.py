@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, and_, or_
 from sqlalchemy.dialects.sqlite import insert
 
 from src.constants import UTC_PLUS_5, ADMINS
@@ -199,6 +199,7 @@ class RepoClean:
         stmt = insert(UserBannedModel).values(
             user_id=user_id,
             created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+            blocked_until=None,
             cnt=1,
             username=username,
             full_name=full_name,
@@ -206,10 +207,91 @@ class RepoClean:
             index_elements=[UserBannedModel.user_id],
             set_=dict(
                 created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+                blocked_until=None,
                 cnt=UserBannedModel.cnt + 1,
                 username=username,
                 full_name=full_name,
             ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def get_banned_users(
+        self,
+    ) -> list[tuple[int, str | None, str | None, str | None, str | None, int, int]]:
+        stmt = (
+            select(
+                UserBannedModel.user_id,
+                UserBannedModel.username,
+                UserBannedModel.full_name,
+                UserBannedModel.created_at,
+                UserBannedModel.blocked_until,
+                UserBannedModel.is_blocked,
+                UserBannedModel.cnt,
+            )
+            .where(
+                or_(
+                    and_(
+                        UserBannedModel.created_at.is_not(None),
+                        UserBannedModel.created_at != "",
+                    ),
+                    UserBannedModel.blocked_until.is_not(None),
+                    UserBannedModel.is_blocked == 1,
+                )
+            )
+            .order_by(UserBannedModel.cnt.desc(), UserBannedModel.user_id.asc())
+        )
+
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return [
+                (
+                    int(user_id),
+                    username,
+                    full_name,
+                    created_at,
+                    blocked_until,
+                    int(is_blocked or 0),
+                    int(cnt or 0),
+                )
+                for user_id, username, full_name, created_at, blocked_until, is_blocked, cnt in res.all()
+            ]
+
+    async def set_user_blocked(
+        self,
+        user_id: int,
+        *,
+        created_at: str,
+        blocked_until: str,
+    ) -> None:
+        stmt = (
+            insert(UserBannedModel)
+            .values(
+                user_id=user_id,
+                created_at=created_at,
+                blocked_until=blocked_until,
+                is_blocked=1,
+            )
+            .on_conflict_do_update(
+                index_elements=[UserBannedModel.user_id],
+                set_=dict(created_at=created_at, blocked_until=blocked_until, is_blocked=1),
+            )
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def clear_user_block(self, user_id: int) -> None:
+        stmt = (
+            insert(UserBannedModel)
+            .values(user_id=user_id, created_at="", blocked_until=None, is_blocked=0)
+            .on_conflict_do_update(
+                index_elements=[UserBannedModel.user_id],
+                set_=dict(created_at="", blocked_until=None, is_blocked=0),
+            )
         )
 
         async with db.session() as session:

@@ -44,7 +44,9 @@ class UserBannedModel(Base):
     __tablename__ = "user_banned"
 
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    created_at: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    blocked_until: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_blocked: Mapped[int] = mapped_column(Integer, default=0)
     cnt: Mapped[int] = mapped_column(Integer, default=1)
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)

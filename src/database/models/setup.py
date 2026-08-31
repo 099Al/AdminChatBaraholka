@@ -41,3 +41,16 @@ async def init_db() -> None:
         if user_banned_columns and "cnt" not in user_banned_columns:
             await conn.execute(text("ALTER TABLE user_banned ADD COLUMN cnt INTEGER DEFAULT 1"))
             await conn.execute(text("UPDATE user_banned SET cnt = 1 WHERE cnt IS NULL"))
+
+        if user_banned_columns and "blocked_until" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN blocked_until TEXT"))
+
+        if user_banned_columns and "is_blocked" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN is_blocked INTEGER DEFAULT 0"))
+            await conn.execute(
+                text(
+                    "UPDATE user_banned "
+                    "SET is_blocked = 1 "
+                    "WHERE blocked_until IS NOT NULL AND blocked_until != ''"
+                )
+            )
