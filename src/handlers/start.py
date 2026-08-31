@@ -268,12 +268,13 @@ async def delete_repeat_messages(message: Message):
         await message.answer("Сначала в нужной группе напиши /bind")
         return
 
-    since_dt = datetime.now(UTC_PLUS_5) - timedelta(days=7)
+    repeat_period = settings.access.repeat_period
+    since_dt = datetime.now(UTC_PLUS_5) - timedelta(days=repeat_period)
     since_ts = int(since_dt.timestamp())
 
     rows = await repo_clean.get_messages_since(group_chat_id, since_ts)
     if not rows:
-        await message.answer("За неделю нет сохранённых сообщений в БД.")
+        await message.answer(f"За {repeat_period} дн. нет сохранённых сообщений в БД.")
         return
 
     seen: set[tuple[str | None, str | None]] = set()
@@ -301,7 +302,7 @@ async def delete_repeat_messages(message: Message):
             seen.add(key)
 
     if not to_delete:
-        await message.answer("Повторов за неделю не найдено ✅")
+        await message.answer(f"Повторов за {repeat_period} дн. не найдено ✅")
         return
 
     deleted = 0
@@ -368,7 +369,7 @@ async def block_banned_users(message: Message):
         return
 
     now = datetime.now(UTC_PLUS_5)
-    blocked_until_dt = now + timedelta(days=settings.access.blocked_days)
+    blocked_until_dt = now + timedelta(days=settings.access.blocked_after_repeat_days)
     blocked = 0
     unblocked = 0
     skipped = 0

@@ -72,7 +72,8 @@ class AccessSettings(BaseSettings):
     )
 
     main_admin_user: int = Field(..., alias="MAIN_ADMIN_USER")
-    blocked_days: int = Field(7, alias="BLOCKED_DAYS")
+    blocked_after_repeat_days: int = Field(7, alias="BLOCKED_AFTER_REPEAT_DAYS")
+    repeat_period: int = Field(7, alias="REPEAT_PERIOD")
 
 
 class Settings:
