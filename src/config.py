@@ -42,13 +42,43 @@ class DB(BaseSettings):
             self.db_url = f"sqlite+aiosqlite:///{db_file.as_posix()}"
 
 
+class ReaderSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    api_id: int = Field(..., alias="API_ID")
+    api_hash: str = Field(..., alias="API_HASH")
+    session_name: str = Field("src/method/tg_session", alias="TELETHON_SESSION_NAME")
+    target: str = Field(..., alias="TELETHON_TARGET")
+    limit: int = Field(5000, alias="TELETHON_LIMIT")
+
+    @property
+    def session_path(self) -> Path:
+        path = Path(self.session_name)
+        if not path.is_absolute():
+            path = BASE_DIR / path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+
 class Settings:
     token: Token
     db: DB
+    _reader: ReaderSettings | None
 
     def __init__(self):
         self.token = Token()
         self.db = DB()
+        self._reader = None
+
+    @property
+    def reader(self) -> ReaderSettings:
+        if self._reader is None:
+            self._reader = ReaderSettings()
+        return self._reader
 
 
 settings = Settings()
