@@ -45,7 +45,10 @@ async def start_handler(message: Message):
 
     await message.answer(
             "Выберите действие:",
-            reply_markup=kb.as_markup(resize_keyboard=True)
+            reply_markup=kb.as_markup(
+                resize_keyboard=True,
+                input_field_placeholder="Действия:",
+            )
         )
 
 @start_router.message(F.chat.type.in_({"group", "supergroup"}), F.text == "/bind")
