@@ -38,9 +38,14 @@ async def init_db() -> None:
         result = await conn.execute(text("PRAGMA table_info(user_banned)"))
         user_banned_columns = {row[1] for row in result.fetchall()}
 
-        if user_banned_columns and "cnt" not in user_banned_columns:
-            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN cnt INTEGER DEFAULT 1"))
-            await conn.execute(text("UPDATE user_banned SET cnt = 1 WHERE cnt IS NULL"))
+        if user_banned_columns and "cnt" in user_banned_columns and "block_repeat_cnt" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned RENAME COLUMN cnt TO block_repeat_cnt"))
+            user_banned_columns.remove("cnt")
+            user_banned_columns.add("block_repeat_cnt")
+
+        if user_banned_columns and "block_repeat_cnt" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN block_repeat_cnt INTEGER DEFAULT 1"))
+            await conn.execute(text("UPDATE user_banned SET block_repeat_cnt = 1 WHERE block_repeat_cnt IS NULL"))
 
         if user_banned_columns and "blocked_until" not in user_banned_columns:
             await conn.execute(text("ALTER TABLE user_banned ADD COLUMN blocked_until TEXT"))

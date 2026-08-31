@@ -244,7 +244,7 @@ class RepoClean:
             user_id=user_id,
             created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
             blocked_until=None,
-            cnt=1,
+            block_repeat_cnt=1,
             username=username,
             full_name=full_name,
         ).on_conflict_do_update(
@@ -252,7 +252,7 @@ class RepoClean:
             set_=dict(
                 created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
                 blocked_until=None,
-                cnt=UserBannedModel.cnt + 1,
+                block_repeat_cnt=UserBannedModel.block_repeat_cnt + 1,
                 username=username,
                 full_name=full_name,
             ),
@@ -273,7 +273,7 @@ class RepoClean:
                 UserBannedModel.created_at,
                 UserBannedModel.blocked_until,
                 UserBannedModel.is_blocked,
-                UserBannedModel.cnt,
+                UserBannedModel.block_repeat_cnt,
             )
             .where(
                 or_(
@@ -285,7 +285,7 @@ class RepoClean:
                     UserBannedModel.is_blocked == 1,
                 )
             )
-            .order_by(UserBannedModel.cnt.desc(), UserBannedModel.user_id.asc())
+            .order_by(UserBannedModel.block_repeat_cnt.desc(), UserBannedModel.user_id.asc())
         )
 
         async with db.session() as session:
@@ -298,9 +298,17 @@ class RepoClean:
                     created_at,
                     blocked_until,
                     int(is_blocked or 0),
-                    int(cnt or 0),
+                    int(block_repeat_cnt or 0),
                 )
-                for user_id, username, full_name, created_at, blocked_until, is_blocked, cnt in res.all()
+                for (
+                    user_id,
+                    username,
+                    full_name,
+                    created_at,
+                    blocked_until,
+                    is_blocked,
+                    block_repeat_cnt,
+                ) in res.all()
             ]
 
     async def set_user_blocked(

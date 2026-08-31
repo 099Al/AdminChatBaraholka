@@ -50,6 +50,6 @@ class UserBannedModel(Base):
     created_at: Mapped[str | None] = mapped_column(Text, nullable=True)
     blocked_until: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_blocked: Mapped[int] = mapped_column(Integer, default=0)
-    cnt: Mapped[int] = mapped_column(Integer, default=1)
+    block_repeat_cnt: Mapped[int] = mapped_column(Integer, default=1)
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
