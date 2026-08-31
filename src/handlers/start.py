@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 from aiogram import Router, F
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
@@ -50,6 +50,16 @@ async def start_handler(message: Message):
                 input_field_placeholder="Действия:",
             )
         )
+
+
+@start_router.message(Command("get_id"))
+async def get_id_handler(message: Message):
+    if not message.from_user:
+        await message.answer("Не могу определить пользователя.")
+        return
+
+    await message.answer(f"user_id: {message.from_user.id}")
+
 
 @start_router.message(F.chat.type.in_({"group", "supergroup"}), F.text == "/bind")
 async def bind_group(message: Message):
