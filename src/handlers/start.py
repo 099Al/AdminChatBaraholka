@@ -7,11 +7,24 @@ from aiogram.types import Message
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
+from src.config import settings
 from src.constants import UTC_PLUS_5
 from src.database.repo.repo_clean import repo_clean
 from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt
 
 start_router = Router()
+
+
+def _is_main_admin(message: Message) -> bool:
+    return bool(message.from_user and message.from_user.id == settings.access.main_admin_user)
+
+
+async def _answer_access_denied(message: Message) -> None:
+    try:
+        await message.answer("Нет доступа.")
+    except (TelegramBadRequest, TelegramForbiddenError):
+        pass
+
 
 def _normalize(text: str) -> str:
     # Нормализация для сравнения "повторов"
@@ -37,12 +50,31 @@ async def start_handler(message: Message):
 
 @start_router.message(F.chat.type.in_({"group", "supergroup"}), F.text == "/bind")
 async def bind_group(message: Message):
+    if not _is_main_admin(message):
+        try:
+            await message.delete()
+        except (TelegramBadRequest, TelegramForbiddenError):
+            pass
+        return
+
     await repo_clean.set_user_active_chat(user_id=message.from_user.id, chat_id=message.chat.id)
-    await message.answer("Группа привязана.")
+
+    try:
+        await message.delete()
+    except (TelegramBadRequest, TelegramForbiddenError):
+        pass
+
+    try:
+        await message.bot.send_message(message.from_user.id, "Группа привязана.")
+    except (TelegramBadRequest, TelegramForbiddenError):
+        pass
 
 # Обработка нажатия первой кнопки
 @start_router.message(F.text == button_1_txt)
 async def cleanup_week(message: Message) -> None:
+    if not _is_main_admin(message):
+        await _answer_access_denied(message)
+        return
 
     user_id = message.from_user.id
 
@@ -88,6 +120,9 @@ async def cleanup_week(message: Message) -> None:
 async def delete_repeat_messages(message: Message):
     if not message.from_user:
         await message.answer("Не могу определить пользователя.")
+        return
+    if not _is_main_admin(message):
+        await _answer_access_denied(message)
         return
 
     user_id = message.from_user.id
@@ -144,6 +179,9 @@ async def delete_repeat_messages(message: Message):
 
 @start_router.message(F.text == button_3_txt)
 async def check_delete_availability(message: Message):
+    if not _is_main_admin(message):
+        await _answer_access_denied(message)
+        return
 
     user_id = message.from_user.id
 

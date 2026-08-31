@@ -64,14 +64,26 @@ class ReaderSettings(BaseSettings):
         return path
 
 
+class AccessSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    main_admin_user: int = Field(..., alias="MAIN_ADMIN_USER")
+
+
 class Settings:
     token: Token
     db: DB
+    access: AccessSettings
     _reader: ReaderSettings | None
 
     def __init__(self):
         self.token = Token()
         self.db = DB()
+        self.access = AccessSettings()
         self._reader = None
 
     @property
