@@ -1,4 +1,5 @@
 import hashlib
+from io import BytesIO
 from datetime import timezone
 
 from aiogram import Router, F
@@ -38,6 +39,59 @@ def _hash_message(text: str | None) -> str | None:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+async def _hash_message_photo(message: Message) -> str | None:
+    if not message.photo:
+        return None
+
+    buffer = BytesIO()
+    await message.bot.download(message.photo[-1], destination=buffer)
+    return hashlib.sha256(buffer.getvalue()).hexdigest()
+
+
+def _format_chat_ref(chat: object, *, include_id: bool = False) -> str | None:
+    title = getattr(chat, "title", None) or getattr(chat, "full_name", None)
+    username = getattr(chat, "username", None)
+    chat_id = getattr(chat, "id", None)
+
+    parts = []
+    if include_id and chat_id is not None:
+        parts.append(str(chat_id))
+    if title:
+        parts.append(str(title))
+    if username:
+        parts.append(f"@{username}")
+
+    return " | ".join(parts) if parts else None
+
+
+def _get_original_author(message: Message) -> tuple[int | None, str | None]:
+    origin = getattr(message, "forward_origin", None)
+    if not origin:
+        return None, None
+
+    sender_user = getattr(origin, "sender_user", None)
+    if sender_user:
+        return getattr(sender_user, "id", None), _format_chat_ref(sender_user)
+
+    sender_user_name = getattr(origin, "sender_user_name", None)
+    if sender_user_name:
+        return None, str(sender_user_name)
+
+    sender_chat = getattr(origin, "sender_chat", None)
+    if sender_chat:
+        return getattr(sender_chat, "id", None), _format_chat_ref(sender_chat)
+
+    chat = getattr(origin, "chat", None)
+    if chat:
+        author_signature = getattr(origin, "author_signature", None)
+        chat_ref = _format_chat_ref(chat)
+        if chat_ref and author_signature:
+            return getattr(chat, "id", None), f"{chat_ref} | {author_signature}"
+        return getattr(chat, "id", None), chat_ref or author_signature
+
+    return None, None
+
+
 @caption_router.message(
      F.chat.type.in_({"group", "supergroup"}),     # собирать только в группах
     ~F.text.in_(BUTTON_TEXTS),                    # не сохранять нажатия кнопок
@@ -68,11 +122,16 @@ async def store_all_messages(message: Message):
         username = None
         full_name = message.sender_chat.title if message.sender_chat else "Unknown"
 
+    original_user_id, original_author = _get_original_author(message)
+
     await repo_clean.upsert_message(
             chat_id=message.chat.id,
             message_id=message.message_id,
-            message_short=(message.text or message.caption)[0:100],
-            message_hash=_hash_message(message.text or message.caption),
+            text_short=(text or "")[0:100],
+            text_full_hash=_hash_message(text),
+            image_hash=await _hash_message_photo(message),
+            original_user_id=original_user_id,
+            original_author=original_author,
             created_at=date_dt,
             date_ts=date_ts,
             has_keywords=kw,

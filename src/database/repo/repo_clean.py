@@ -21,8 +21,11 @@ class RepoClean:
         *,
         chat_id: int,
         message_id: int,
-        message_short: str,
-        message_hash: str,
+        text_short: str,
+        text_full_hash: str | None,
+        image_hash: str | None,
+        original_user_id: int | None,
+        original_author: str | None,
         created_at: str,
         date_ts: int,
         has_keywords: int,
@@ -33,8 +36,11 @@ class RepoClean:
         stmt = insert(MessageModel).values(
             chat_id=chat_id,
             message_id=message_id,
-            message_short=message_short,
-            message_hash=message_hash,
+            text_short=text_short,
+            text_full_hash=text_full_hash,
+            image_hash=image_hash,
+            original_user_id=original_user_id,
+            original_author=original_author,
             created_at=created_at,
             date_ts=date_ts,
             has_keywords=has_keywords,
@@ -44,8 +50,11 @@ class RepoClean:
         ).on_conflict_do_update(
             index_elements=[MessageModel.chat_id, MessageModel.message_id],
             set_=dict(
-                message_short=message_short,
-                message_hash=message_hash,
+                text_short=text_short,
+                text_full_hash=text_full_hash,
+                image_hash=image_hash,
+                original_user_id=original_user_id,
+                original_author=original_author,
                 created_at=created_at,
                 date_ts=date_ts,
                 has_keywords=has_keywords,
@@ -109,7 +118,19 @@ class RepoClean:
         self,
         chat_id: int,
         since_ts: int,
-    ) -> list[tuple[int, int, str, int | None, str | None, str | None]]:
+    ) -> list[
+        tuple[
+            int,
+            int,
+            str,
+            str | None,
+            str | None,
+            int | None,
+            int | None,
+            str | None,
+            str | None,
+        ]
+    ]:
         """
         Возвращает список сообщений за период.
         """
@@ -117,7 +138,10 @@ class RepoClean:
             select(
                 MessageModel.message_id,
                 MessageModel.date_ts,
-                MessageModel.message_short,
+                MessageModel.text_short,
+                MessageModel.text_full_hash,
+                MessageModel.image_hash,
+                MessageModel.original_user_id,
                 MessageModel.user_id,
                 MessageModel.username,
                 MessageModel.full_name,
@@ -132,8 +156,28 @@ class RepoClean:
         async with db.session() as session:
             res = await session.execute(stmt)
             return [
-                (int(mid), int(ts), str(text or ""), user_id, username, full_name)
-                for mid, ts, text, user_id, username, full_name in res.all()
+                (
+                    int(mid),
+                    int(ts),
+                    str(text or ""),
+                    text_full_hash,
+                    image_hash,
+                    original_user_id,
+                    user_id,
+                    username,
+                    full_name,
+                )
+                for (
+                    mid,
+                    ts,
+                    text,
+                    text_full_hash,
+                    image_hash,
+                    original_user_id,
+                    user_id,
+                    username,
+                    full_name,
+                ) in res.all()
             ]
 
     async def add_admin(

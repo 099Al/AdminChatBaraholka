@@ -54,3 +54,28 @@ async def init_db() -> None:
                     "WHERE blocked_until IS NOT NULL AND blocked_until != ''"
                 )
             )
+
+        result = await conn.execute(text("PRAGMA table_info(messages)"))
+        message_columns = {row[1] for row in result.fetchall()}
+
+        if message_columns and "message_short" in message_columns and "text_short" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages RENAME COLUMN message_short TO text_short"))
+            message_columns.remove("message_short")
+            message_columns.add("text_short")
+
+        if message_columns and "message_hash" in message_columns and "text_full_hash" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages RENAME COLUMN message_hash TO text_full_hash"))
+            message_columns.remove("message_hash")
+            message_columns.add("text_full_hash")
+
+        if message_columns and "text_full_hash" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN text_full_hash TEXT"))
+
+        if message_columns and "image_hash" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN image_hash TEXT"))
+
+        if message_columns and "original_author" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN original_author TEXT"))
+
+        if message_columns and "original_user_id" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN original_user_id BIGINT"))

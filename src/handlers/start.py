@@ -47,13 +47,6 @@ async def _get_user_display_info(message: Message, user_id: int) -> tuple[str | 
     return username, full_name
 
 
-def _normalize(text: str) -> str:
-    # Нормализация для сравнения "повторов"
-    # - убрать лишние пробелы
-    # - привести к lower
-    return " ".join((text or "").strip().lower().split())
-
-
 def _format_dt(value: datetime) -> str:
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -283,16 +276,27 @@ async def delete_repeat_messages(message: Message):
         await message.answer("За неделю нет сохранённых сообщений в БД.")
         return
 
-    seen: set[str] = set()
+    seen: set[tuple[str | None, str | None]] = set()
     to_delete: list[tuple[int, int | None, str | None, str | None]] = []
 
     # rows уже отсортированы по времени ASC -> первое встретившееся оставляем
-    for mid, _, text_short, repeated_user_id, username, full_name in rows:
-        key = _normalize(text_short)
-        if not key:
+    for (
+        mid,
+        _,
+        _text_short,
+        text_full_hash,
+        image_hash,
+        _original_user_id,
+        sender_user_id,
+        username,
+        full_name,
+    ) in rows:
+        if not text_full_hash and not image_hash:
             continue
+
+        key = (text_full_hash, image_hash)
         if key in seen:
-            to_delete.append((mid, repeated_user_id, username, full_name))
+            to_delete.append((mid, sender_user_id, username, full_name))
         else:
             seen.add(key)
 
@@ -303,12 +307,12 @@ async def delete_repeat_messages(message: Message):
     deleted = 0
     skipped = 0
 
-    for mid, repeated_user_id, username, full_name in to_delete:
+    for mid, sender_user_id, username, full_name in to_delete:
         try:
             await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
-            if repeated_user_id is not None:
+            if sender_user_id is not None:
                 await repo_clean.add_banned_user(
-                    user_id=repeated_user_id,
+                    user_id=sender_user_id,
                     username=username,
                     full_name=full_name,
                 )
