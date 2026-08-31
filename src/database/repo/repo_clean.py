@@ -74,7 +74,11 @@ class RepoClean:
             .where(
                 MessageModel.chat_id == chat_id,
                 MessageModel.date_ts >= since_ts,
-                MessageModel.has_keywords == 0,
+                or_(
+                    MessageModel.has_keywords == 0,
+                    func.lower(MessageModel.text_short).like("%удаленное сообщение%"),
+                    func.lower(MessageModel.text_short).like("%удалённое сообщение%"),
+                ),
                 ~MessageModel.user_id.in_(ADMINS),
             )
             .order_by(MessageModel.date_ts.asc())
