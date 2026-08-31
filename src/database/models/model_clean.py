@@ -38,3 +38,13 @@ class AdminModel(Base):
     created_at: Mapped[str] = mapped_column(Text)
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class UserBannedModel(Base):
+    __tablename__ = "user_banned"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    created_at: Mapped[str] = mapped_column(Text)
+    cnt: Mapped[int] = mapped_column(Integer, default=1)
+    username: Mapped[str | None] = mapped_column(Text, nullable=True)
+    full_name: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -7,7 +7,12 @@ from sqlalchemy.dialects.sqlite import insert
 
 from src.constants import UTC_PLUS_5, ADMINS
 from src.database.connect import db
-from src.database.models.model_clean import AdminModel, MessageModel, UserChatBindingModel
+from src.database.models.model_clean import (
+    AdminModel,
+    MessageModel,
+    UserBannedModel,
+    UserChatBindingModel,
+)
 
 
 class RepoClean:
@@ -100,12 +105,23 @@ class RepoClean:
             row = res.first()
             return int(row[0]) if row else None
 
-    async def get_messages_since(self, chat_id: int, since_ts: int) -> list[tuple[int, int, str]]:
+    async def get_messages_since(
+        self,
+        chat_id: int,
+        since_ts: int,
+    ) -> list[tuple[int, int, str, int | None, str | None, str | None]]:
         """
-        Возвращает список (message_id, date_ts, message_short) за период.
+        Возвращает список сообщений за период.
         """
         stmt = (
-            select(MessageModel.message_id, MessageModel.date_ts, MessageModel.message_short)
+            select(
+                MessageModel.message_id,
+                MessageModel.date_ts,
+                MessageModel.message_short,
+                MessageModel.user_id,
+                MessageModel.username,
+                MessageModel.full_name,
+            )
             .where(
                 MessageModel.chat_id == chat_id,
                 MessageModel.date_ts >= since_ts,
@@ -115,7 +131,10 @@ class RepoClean:
 
         async with db.session() as session:
             res = await session.execute(stmt)
-            return [(int(mid), int(ts), str(text or "")) for (mid, ts, text) in res.all()]
+            return [
+                (int(mid), int(ts), str(text or ""), user_id, username, full_name)
+                for mid, ts, text, user_id, username, full_name in res.all()
+            ]
 
     async def add_admin(
         self,
@@ -169,5 +188,32 @@ class RepoClean:
                 (int(user_id), username, full_name, str(created_at))
                 for user_id, username, full_name, created_at in res.all()
             ]
+
+    async def add_banned_user(
+        self,
+        user_id: int,
+        username: str | None = None,
+        full_name: str | None = None,
+    ) -> None:
+        now = datetime.now(UTC_PLUS_5)
+        stmt = insert(UserBannedModel).values(
+            user_id=user_id,
+            created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+            cnt=1,
+            username=username,
+            full_name=full_name,
+        ).on_conflict_do_update(
+            index_elements=[UserBannedModel.user_id],
+            set_=dict(
+                created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+                cnt=UserBannedModel.cnt + 1,
+                username=username,
+                full_name=full_name,
+            ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
 
 repo_clean = RepoClean()

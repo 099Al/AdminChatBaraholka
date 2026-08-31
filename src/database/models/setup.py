@@ -34,3 +34,10 @@ async def init_db() -> None:
 
         if columns and "full_name" not in columns:
             await conn.execute(text("ALTER TABLE admins ADD COLUMN full_name TEXT"))
+
+        result = await conn.execute(text("PRAGMA table_info(user_banned)"))
+        user_banned_columns = {row[1] for row in result.fetchall()}
+
+        if user_banned_columns and "cnt" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN cnt INTEGER DEFAULT 1"))
+            await conn.execute(text("UPDATE user_banned SET cnt = 1 WHERE cnt IS NULL"))

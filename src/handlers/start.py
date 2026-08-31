@@ -234,15 +234,15 @@ async def delete_repeat_messages(message: Message):
         return
 
     seen: set[str] = set()
-    to_delete: list[int] = []
+    to_delete: list[tuple[int, int | None, str | None, str | None]] = []
 
     # rows уже отсортированы по времени ASC -> первое встретившееся оставляем
-    for mid, _, text_short in rows:
+    for mid, _, text_short, repeated_user_id, username, full_name in rows:
         key = _normalize(text_short)
         if not key:
             continue
         if key in seen:
-            to_delete.append(mid)
+            to_delete.append((mid, repeated_user_id, username, full_name))
         else:
             seen.add(key)
 
@@ -253,9 +253,15 @@ async def delete_repeat_messages(message: Message):
     deleted = 0
     skipped = 0
 
-    for mid in to_delete:
+    for mid, repeated_user_id, username, full_name in to_delete:
         try:
             await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
+            if repeated_user_id is not None:
+                await repo_clean.add_banned_user(
+                    user_id=repeated_user_id,
+                    username=username,
+                    full_name=full_name,
+                )
             await repo_clean.delete_record(group_chat_id, mid)
             deleted += 1
             await asyncio.sleep(0.05)
