@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select, delete, and_, or_
+from sqlalchemy import case, func, select, delete, and_, or_
 from sqlalchemy.dialects.sqlite import insert
 
 from src.constants import UTC_PLUS_5, ADMINS
@@ -180,6 +180,35 @@ class RepoClean:
                 ) in res.all()
             ]
 
+    async def get_messages_for_limit_since(
+        self,
+        chat_id: int,
+        since_ts: int,
+    ) -> list[tuple[int, int, int, str | None, str | None]]:
+        stmt = (
+            select(
+                MessageModel.message_id,
+                MessageModel.date_ts,
+                MessageModel.user_id,
+                MessageModel.username,
+                MessageModel.full_name,
+            )
+            .where(
+                MessageModel.chat_id == chat_id,
+                MessageModel.date_ts >= since_ts,
+                MessageModel.user_id.is_not(None),
+                ~MessageModel.user_id.in_(ADMINS),
+            )
+            .order_by(MessageModel.user_id.asc(), MessageModel.date_ts.asc())
+        )
+
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return [
+                (int(mid), int(ts), int(user_id), username, full_name)
+                for mid, ts, user_id, username, full_name in res.all()
+            ]
+
     async def add_admin(
         self,
         user_id: int,
@@ -244,6 +273,7 @@ class RepoClean:
             user_id=user_id,
             created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
             blocked_until=None,
+            block_type=2,
             block_repeat_cnt=1,
             username=username,
             full_name=full_name,
@@ -252,7 +282,45 @@ class RepoClean:
             set_=dict(
                 created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
                 blocked_until=None,
-                block_repeat_cnt=UserBannedModel.block_repeat_cnt + 1,
+                block_type=2,
+                block_repeat_cnt=func.coalesce(UserBannedModel.block_repeat_cnt, 0) + 1,
+                username=username,
+                full_name=full_name,
+            ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def add_limit_banned_user(
+        self,
+        user_id: int,
+        username: str | None = None,
+        full_name: str | None = None,
+    ) -> None:
+        now = datetime.now(UTC_PLUS_5)
+        created_at = now.strftime("%Y-%m-%d %H:%M:%S")
+        block_type = case(
+            (UserBannedModel.block_type == 2, 2),
+            else_=1,
+        )
+        stmt = insert(UserBannedModel).values(
+            user_id=user_id,
+            created_at=created_at,
+            blocked_until=None,
+            block_type=1,
+            block_limit=1,
+            block_repeat_cnt=0,
+            username=username,
+            full_name=full_name,
+        ).on_conflict_do_update(
+            index_elements=[UserBannedModel.user_id],
+            set_=dict(
+                created_at=created_at,
+                blocked_until=None,
+                block_type=block_type,
+                block_limit=func.coalesce(UserBannedModel.block_limit, 0) + 1,
                 username=username,
                 full_name=full_name,
             ),
@@ -264,7 +332,7 @@ class RepoClean:
 
     async def get_banned_users(
         self,
-    ) -> list[tuple[int, str | None, str | None, str | None, str | None, int, int]]:
+    ) -> list[tuple[int, str | None, str | None, str | None, str | None, int, int | None, int, int]]:
         stmt = (
             select(
                 UserBannedModel.user_id,
@@ -273,7 +341,9 @@ class RepoClean:
                 UserBannedModel.created_at,
                 UserBannedModel.blocked_until,
                 UserBannedModel.is_blocked,
+                UserBannedModel.block_type,
                 UserBannedModel.block_repeat_cnt,
+                UserBannedModel.block_limit,
             )
             .where(
                 or_(
@@ -283,9 +353,15 @@ class RepoClean:
                     ),
                     UserBannedModel.blocked_until.is_not(None),
                     UserBannedModel.is_blocked == 1,
+                    UserBannedModel.block_type.is_not(None),
                 )
             )
-            .order_by(UserBannedModel.block_repeat_cnt.desc(), UserBannedModel.user_id.asc())
+            .order_by(
+                UserBannedModel.block_type.desc(),
+                UserBannedModel.block_repeat_cnt.desc(),
+                UserBannedModel.block_limit.desc(),
+                UserBannedModel.user_id.asc(),
+            )
         )
 
         async with db.session() as session:
@@ -298,7 +374,9 @@ class RepoClean:
                     created_at,
                     blocked_until,
                     int(is_blocked or 0),
+                    block_type,
                     int(block_repeat_cnt or 0),
+                    int(block_limit or 0),
                 )
                 for (
                     user_id,
@@ -307,7 +385,9 @@ class RepoClean:
                     created_at,
                     blocked_until,
                     is_blocked,
+                    block_type,
                     block_repeat_cnt,
+                    block_limit,
                 ) in res.all()
             ]
 
@@ -339,10 +419,10 @@ class RepoClean:
     async def clear_user_block(self, user_id: int) -> None:
         stmt = (
             insert(UserBannedModel)
-            .values(user_id=user_id, created_at="", blocked_until=None, is_blocked=0)
+            .values(user_id=user_id, created_at="", blocked_until=None, is_blocked=0, block_type=None)
             .on_conflict_do_update(
                 index_elements=[UserBannedModel.user_id],
-                set_=dict(created_at="", blocked_until=None, is_blocked=0),
+                set_=dict(created_at="", blocked_until=None, is_blocked=0, block_type=None),
             )
         )
 

@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, Teleg
 from src.config import settings
 from src.constants import UTC_PLUS_5
 from src.database.repo.repo_clean import repo_clean
-from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt, button_4_txt
+from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt
 
 start_router = Router()
 
@@ -104,6 +104,7 @@ async def start_handler(message: Message):
     kb.button(text=button_3_txt)
     kb.button(text=button_1_txt)
     kb.button(text=button_2_txt)
+    kb.button(text=button_5_txt)
     kb.button(text=button_4_txt)
     kb.adjust(1)
 
@@ -332,6 +333,77 @@ async def delete_repeat_messages(message: Message):
 
     await message.answer(f"Готово ✅ Удалено повторов: {deleted}, пропущено: {skipped}")
 
+
+@start_router.message(F.text == button_5_txt)
+async def delete_limit_messages(message: Message):
+    if not message.from_user:
+        await message.answer("Не могу определить пользователя.")
+        return
+    if not await _can_moderate(message):
+        await _answer_access_denied(message)
+        return
+
+    user_id = message.from_user.id
+    group_chat_id = await repo_clean.get_user_active_chat(user_id)
+    if not group_chat_id:
+        await message.answer("Сначала в нужной группе напиши /bind")
+        return
+
+    now = datetime.now(UTC_PLUS_5)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = await repo_clean.get_messages_for_limit_since(group_chat_id, int(day_start.timestamp()))
+    if not rows:
+        await message.answer("За сегодня нет сохранённых сообщений в БД.")
+        return
+
+    limit_messages = settings.access.limit_messages
+    per_user_count: dict[int, int] = {}
+    to_delete: list[tuple[int, int, str | None, str | None]] = []
+    limit_users: dict[int, tuple[str | None, str | None]] = {}
+
+    for mid, _, sender_user_id, username, full_name in rows:
+        current_count = per_user_count.get(sender_user_id, 0) + 1
+        per_user_count[sender_user_id] = current_count
+        if current_count <= limit_messages:
+            continue
+
+        to_delete.append((mid, sender_user_id, username, full_name))
+        limit_users.setdefault(sender_user_id, (username, full_name))
+
+    if not to_delete:
+        await message.answer(f"Перелимита за сегодня нет. Лимит: {limit_messages}")
+        return
+
+    deleted = 0
+    skipped = 0
+
+    for mid, _, _, _ in to_delete:
+        try:
+            await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
+            await repo_clean.delete_record(group_chat_id, mid)
+            deleted += 1
+            await asyncio.sleep(0.05)
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after + 0.5)
+        except TelegramForbiddenError:
+            await message.answer("❌ Нет прав удалять сообщения в группе (бот должен быть админом с Delete messages).")
+            return
+        except TelegramBadRequest:
+            skipped += 1
+            await repo_clean.delete_record(group_chat_id, mid)
+
+    for limit_user_id, (username, full_name) in limit_users.items():
+        await repo_clean.add_limit_banned_user(
+            user_id=limit_user_id,
+            username=username,
+            full_name=full_name,
+        )
+
+    await message.answer(
+        f"Готово ✅ Удалено перелимита: {deleted}, кандидатов на блокировку: {len(limit_users)}, пропущено: {skipped}"
+    )
+
+
 @start_router.message(F.text == button_3_txt)
 async def check_delete_availability(message: Message):
     if not await _can_moderate(message):
@@ -369,13 +441,12 @@ async def block_banned_users(message: Message):
         return
 
     now = datetime.now(UTC_PLUS_5)
-    blocked_until_dt = now + timedelta(days=settings.access.blocked_after_repeat_days)
     blocked = 0
     unblocked = 0
     skipped = 0
     skipped_reasons: list[str] = []
 
-    for banned_user_id, _, _, created_at, blocked_until, is_blocked, _ in rows:
+    for banned_user_id, _, _, created_at, blocked_until, is_blocked, block_type, _, _ in rows:
         blocked_until_current = _parse_dt(blocked_until)
 
         try:
@@ -415,6 +486,16 @@ async def block_banned_users(message: Message):
                 skipped_reasons.append(f"{banned_user_id}: нет даты нарушения для блокировки")
                 continue
 
+            if block_type == 1:
+                block_days = settings.access.blocked_after_limit_days
+            elif block_type == 2:
+                block_days = settings.access.blocked_after_repeat_days
+            else:
+                skipped += 1
+                skipped_reasons.append(f"{banned_user_id}: не указан тип блокировки")
+                continue
+
+            blocked_until_dt = now + timedelta(days=block_days)
             await message.bot.restrict_chat_member(
                 chat_id=group_chat_id,
                 user_id=banned_user_id,

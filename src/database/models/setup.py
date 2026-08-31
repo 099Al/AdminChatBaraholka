@@ -60,6 +60,20 @@ async def init_db() -> None:
                 )
             )
 
+        if user_banned_columns and "block_limit" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN block_limit INTEGER DEFAULT 0"))
+            await conn.execute(text("UPDATE user_banned SET block_limit = 0 WHERE block_limit IS NULL"))
+
+        if user_banned_columns and "block_type" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN block_type INTEGER"))
+            await conn.execute(
+                text(
+                    "UPDATE user_banned "
+                    "SET block_type = 2 "
+                    "WHERE created_at IS NOT NULL AND created_at != ''"
+                )
+            )
+
         result = await conn.execute(text("PRAGMA table_info(messages)"))
         message_columns = {row[1] for row in result.fetchall()}
 
