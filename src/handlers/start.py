@@ -102,11 +102,11 @@ def _full_write_permissions() -> ChatPermissions:
 async def start_handler(message: Message):
     kb = ReplyKeyboardBuilder()
     kb.button(text=button_3_txt)
-    kb.button(text=button_1_txt)
     kb.button(text=button_2_txt)
     kb.button(text=button_5_txt)
+    kb.button(text=button_1_txt)
     kb.button(text=button_4_txt)
-    kb.adjust(1)
+    kb.adjust(1, 2, 2)
 
     await message.answer(
             "Выберите действие:",
