@@ -130,6 +130,7 @@ async def store_all_messages(message: Message):
             text_short=(text or "")[0:100],
             text_full_hash=_hash_message(text),
             image_hash=await _hash_message_photo(message),
+            reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
             original_user_id=original_user_id,
             original_author=original_author,
             created_at=date_dt,

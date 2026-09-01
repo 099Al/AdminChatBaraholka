@@ -93,6 +93,9 @@ async def init_db() -> None:
         if message_columns and "image_hash" not in message_columns:
             await conn.execute(text("ALTER TABLE messages ADD COLUMN image_hash TEXT"))
 
+        if message_columns and "reply_to_message_id" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN reply_to_message_id INTEGER"))
+
         if message_columns and "original_author" not in message_columns:
             await conn.execute(text("ALTER TABLE messages ADD COLUMN original_author TEXT"))
 

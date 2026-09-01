@@ -279,7 +279,10 @@ async def delete_repeat_messages(message: Message):
         return
 
     seen: set[tuple[str | None, str | None]] = set()
-    to_delete: list[tuple[int, int | None, str | None, str | None]] = []
+    repeat_message_ids: set[int] = set()
+    repeat_message_ids_ordered: list[int] = []
+    message_authors: dict[int, tuple[int | None, str | None, str | None]] = {}
+    replies_by_parent: dict[int, list[int]] = {}
 
     # rows уже отсортированы по времени ASC -> первое встретившееся оставляем
     for (
@@ -288,31 +291,52 @@ async def delete_repeat_messages(message: Message):
         _text_short,
         text_full_hash,
         image_hash,
+        reply_to_message_id,
         _original_user_id,
         sender_user_id,
         username,
         full_name,
     ) in rows:
+        message_authors[mid] = (sender_user_id, username, full_name)
+        if reply_to_message_id is not None:
+            replies_by_parent.setdefault(reply_to_message_id, []).append(mid)
+
         if not text_full_hash and not image_hash:
             continue
 
         key = (text_full_hash, image_hash)
         if key in seen:
-            to_delete.append((mid, sender_user_id, username, full_name))
+            repeat_message_ids.add(mid)
+            repeat_message_ids_ordered.append(mid)
         else:
             seen.add(key)
 
-    if not to_delete:
+    to_delete_ids: list[int] = []
+    to_delete_seen: set[int] = set()
+    to_process = list(repeat_message_ids_ordered)
+    index = 0
+    while index < len(to_process):
+        mid = to_process[index]
+        index += 1
+        if mid in to_delete_seen:
+            continue
+        to_delete_seen.add(mid)
+        to_delete_ids.append(mid)
+        to_process.extend(replies_by_parent.get(mid, ()))
+
+    if not to_delete_ids:
         await message.answer(f"Повторов за {repeat_period} дн. не найдено ✅")
         return
 
     deleted = 0
+    deleted_replies = 0
     skipped = 0
 
-    for mid, sender_user_id, username, full_name in to_delete:
+    for mid in to_delete_ids:
+        sender_user_id, username, full_name = message_authors.get(mid, (None, None, None))
         try:
             await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
-            if sender_user_id is not None:
+            if mid in repeat_message_ids and sender_user_id is not None:
                 await repo_clean.add_banned_user(
                     user_id=sender_user_id,
                     username=username,
@@ -320,6 +344,8 @@ async def delete_repeat_messages(message: Message):
                 )
             await repo_clean.delete_record(group_chat_id, mid)
             deleted += 1
+            if mid not in repeat_message_ids:
+                deleted_replies += 1
             await asyncio.sleep(0.05)
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after + 0.5)
@@ -331,7 +357,9 @@ async def delete_repeat_messages(message: Message):
             skipped += 1
             await repo_clean.delete_record(group_chat_id, mid)
 
-    await message.answer(f"Готово ✅ Удалено повторов: {deleted}, пропущено: {skipped}")
+    await message.answer(
+        f"Готово ✅ Удалено повторов: {deleted - deleted_replies}, ответов к ним: {deleted_replies}, пропущено: {skipped}"
+    )
 
 
 @start_router.message(F.text == button_5_txt)

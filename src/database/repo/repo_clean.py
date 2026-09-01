@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import case, func, select, delete, and_, or_
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.orm import aliased
 
 from src.constants import UTC_PLUS_5, ADMINS
 from src.database.connect import db
@@ -24,6 +25,7 @@ class RepoClean:
         text_short: str,
         text_full_hash: str | None,
         image_hash: str | None,
+        reply_to_message_id: int | None,
         original_user_id: int | None,
         original_author: str | None,
         created_at: str,
@@ -39,6 +41,7 @@ class RepoClean:
             text_short=text_short,
             text_full_hash=text_full_hash,
             image_hash=image_hash,
+            reply_to_message_id=reply_to_message_id,
             original_user_id=original_user_id,
             original_author=original_author,
             created_at=created_at,
@@ -53,6 +56,7 @@ class RepoClean:
                 text_short=text_short,
                 text_full_hash=text_full_hash,
                 image_hash=image_hash,
+                reply_to_message_id=reply_to_message_id,
                 original_user_id=original_user_id,
                 original_author=original_author,
                 created_at=created_at,
@@ -69,6 +73,15 @@ class RepoClean:
             await session.commit()
 
     async def get_message_ids_without_keywords_since(self, chat_id: int, since_ts: int) -> list[int]:
+        parent_message = aliased(MessageModel)
+        parent_exists = (
+            select(parent_message.message_id)
+            .where(
+                parent_message.chat_id == MessageModel.chat_id,
+                parent_message.message_id == MessageModel.reply_to_message_id,
+            )
+            .exists()
+        )
         stmt = (
             select(MessageModel.message_id)
             .where(
@@ -78,6 +91,10 @@ class RepoClean:
                     MessageModel.has_keywords == 0,
                     func.lower(MessageModel.text_short).like("%удаленное сообщение%"),
                     func.lower(MessageModel.text_short).like("%удалённое сообщение%"),
+                    and_(
+                        MessageModel.reply_to_message_id.is_not(None),
+                        ~parent_exists,
+                    ),
                 ),
                 ~MessageModel.user_id.in_(ADMINS),
             )
@@ -131,6 +148,7 @@ class RepoClean:
             str | None,
             int | None,
             int | None,
+            int | None,
             str | None,
             str | None,
         ]
@@ -145,6 +163,7 @@ class RepoClean:
                 MessageModel.text_short,
                 MessageModel.text_full_hash,
                 MessageModel.image_hash,
+                MessageModel.reply_to_message_id,
                 MessageModel.original_user_id,
                 MessageModel.user_id,
                 MessageModel.username,
@@ -166,6 +185,7 @@ class RepoClean:
                     str(text or ""),
                     text_full_hash,
                     image_hash,
+                    reply_to_message_id,
                     original_user_id,
                     user_id,
                     username,
@@ -177,6 +197,7 @@ class RepoClean:
                     text,
                     text_full_hash,
                     image_hash,
+                    reply_to_message_id,
                     original_user_id,
                     user_id,
                     username,
