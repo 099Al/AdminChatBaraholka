@@ -95,10 +95,11 @@ async def get_sender_info(message) -> tuple[int | None, str | None, str | None]:
     return None, None, "Unknown"
 
 
-async def main() -> None:
+async def read_all_messages(*, init_database: bool = True, dispose_db: bool = True) -> tuple[int, int]:
     reader_settings = settings.reader
 
-    await init_db()
+    if init_database:
+        await init_db()
 
     client = TelegramClient(
         reader_settings.session_path,
@@ -156,7 +157,14 @@ async def main() -> None:
         print(f"Skipped empty/service messages: {skipped_empty}.")
     finally:
         await client.disconnect()
-        await db.dispose()
+        if dispose_db:
+            await db.dispose()
+
+    return saved, skipped_empty
+
+
+async def main() -> None:
+    await read_all_messages()
 
 
 if __name__ == "__main__":
