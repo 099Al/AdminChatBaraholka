@@ -88,6 +88,7 @@ async def delete_repeat_messages(message: Message):
     repeat_message_ids: set[int] = set()
     repeat_message_ids_ordered: list[int] = []
     repeat_roots: set[int] = set()
+    repeat_root_by_message_id: dict[int, int] = {}
 
     for group in grouped_rows:
         ids = [int(mid) for mid in group["ids"]]
@@ -104,6 +105,7 @@ async def delete_repeat_messages(message: Message):
             repeat_message_ids.update(ids)
             repeat_message_ids_ordered.extend(ids)
             repeat_roots.add(ids[0])
+            repeat_root_by_message_id.update({mid: ids[0] for mid in ids})
         else:
             seen_exact.add(exact_key)
             seen_image_hashes.update(image_hash_set)
@@ -128,17 +130,13 @@ async def delete_repeat_messages(message: Message):
     deleted = 0
     deleted_replies = 0
     skipped = 0
+    deleted_repeat_roots: set[int] = set()
 
     for mid in to_delete_ids:
-        sender_user_id, username, full_name = message_authors.get(mid, (None, None, None))
         try:
             await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
-            if mid in repeat_roots and sender_user_id is not None:
-                await repo_clean.add_banned_user(
-                    user_id=sender_user_id,
-                    username=username,
-                    full_name=full_name,
-                )
+            if mid in repeat_message_ids:
+                deleted_repeat_roots.add(repeat_root_by_message_id.get(mid, mid))
             await repo_clean.delete_record(group_chat_id, mid)
             deleted += 1
             if mid not in repeat_message_ids:
@@ -152,6 +150,18 @@ async def delete_repeat_messages(message: Message):
         except TelegramBadRequest:
             skipped += 1
             await repo_clean.delete_record(group_chat_id, mid)
+
+    for root_mid in deleted_repeat_roots:
+        if root_mid not in repeat_roots:
+            continue
+        sender_user_id, username, full_name = message_authors.get(root_mid, (None, None, None))
+        if sender_user_id is None:
+            continue
+        await repo_clean.add_banned_user(
+            user_id=sender_user_id,
+            username=username,
+            full_name=full_name,
+        )
 
     await message.answer(
         f"Готово ✅ Удалено повторов: {deleted - deleted_replies}, ответов к ним: {deleted_replies}, пропущено: {skipped}"
