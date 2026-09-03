@@ -13,7 +13,6 @@ from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt, b
 caption_router = Router()
 
 
-
 BUTTON_TEXTS = {button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt}
 
 
