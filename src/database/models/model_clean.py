@@ -13,6 +13,7 @@ class MessageModel(Base):
     text_short: Mapped[str] = mapped_column(Text, default="")
     text_full_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_group_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     reply_to_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     original_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     original_author: Mapped[str | None] = mapped_column(Text, nullable=True)

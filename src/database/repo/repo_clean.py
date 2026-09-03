@@ -25,6 +25,7 @@ class RepoClean:
         text_short: str,
         text_full_hash: str | None,
         image_hash: str | None,
+        media_group_id: str | None,
         reply_to_message_id: int | None,
         original_user_id: int | None,
         original_author: str | None,
@@ -41,6 +42,7 @@ class RepoClean:
             text_short=text_short,
             text_full_hash=text_full_hash,
             image_hash=image_hash,
+            media_group_id=media_group_id,
             reply_to_message_id=reply_to_message_id,
             original_user_id=original_user_id,
             original_author=original_author,
@@ -56,6 +58,7 @@ class RepoClean:
                 text_short=text_short,
                 text_full_hash=text_full_hash,
                 image_hash=image_hash,
+                media_group_id=media_group_id,
                 reply_to_message_id=reply_to_message_id,
                 original_user_id=original_user_id,
                 original_author=original_author,
@@ -74,6 +77,7 @@ class RepoClean:
 
     async def get_message_ids_without_keywords_since(self, chat_id: int, since_ts: int) -> list[int]:
         parent_message = aliased(MessageModel)
+        grouped_message = aliased(MessageModel)
         parent_exists = (
             select(parent_message.message_id)
             .where(
@@ -82,13 +86,32 @@ class RepoClean:
             )
             .exists()
         )
+        same_logical_message = or_(
+            and_(
+                MessageModel.media_group_id.is_not(None),
+                grouped_message.media_group_id == MessageModel.media_group_id,
+            ),
+            and_(
+                MessageModel.media_group_id.is_(None),
+                grouped_message.message_id == MessageModel.message_id,
+            ),
+        )
+        group_has_keywords = (
+            select(func.max(grouped_message.has_keywords))
+            .where(
+                grouped_message.chat_id == MessageModel.chat_id,
+                grouped_message.date_ts >= since_ts,
+                same_logical_message,
+            )
+            .scalar_subquery()
+        )
         stmt = (
             select(MessageModel.message_id)
             .where(
                 MessageModel.chat_id == chat_id,
                 MessageModel.date_ts >= since_ts,
                 or_(
-                    MessageModel.has_keywords == 0,
+                    group_has_keywords == 0,
                     func.lower(MessageModel.text_short).like("%удаленное сообщение%"),
                     func.lower(MessageModel.text_short).like("%удалённое сообщение%"),
                     and_(
@@ -151,6 +174,7 @@ class RepoClean:
             int | None,
             str | None,
             str | None,
+            str | None,
         ]
     ]:
         """
@@ -168,12 +192,14 @@ class RepoClean:
                 MessageModel.user_id,
                 MessageModel.username,
                 MessageModel.full_name,
+                MessageModel.media_group_id,
             )
             .where(
                 MessageModel.chat_id == chat_id,
                 MessageModel.date_ts >= since_ts,
             )
             .order_by(MessageModel.date_ts.asc())
+            .order_by(MessageModel.message_id.asc())
         )
 
         async with db.session() as session:
@@ -190,6 +216,7 @@ class RepoClean:
                     user_id,
                     username,
                     full_name,
+                    media_group_id,
                 )
                 for (
                     mid,
@@ -202,6 +229,7 @@ class RepoClean:
                     user_id,
                     username,
                     full_name,
+                    media_group_id,
                 ) in res.all()
             ]
 
@@ -209,7 +237,7 @@ class RepoClean:
         self,
         chat_id: int,
         since_ts: int,
-    ) -> list[tuple[int, int, int, str | None, str | None]]:
+    ) -> list[tuple[int, int, int, str | None, str | None, str | None]]:
         stmt = (
             select(
                 MessageModel.message_id,
@@ -217,6 +245,7 @@ class RepoClean:
                 MessageModel.user_id,
                 MessageModel.username,
                 MessageModel.full_name,
+                MessageModel.media_group_id,
             )
             .where(
                 MessageModel.chat_id == chat_id,
@@ -224,14 +253,14 @@ class RepoClean:
                 MessageModel.user_id.is_not(None),
                 ~MessageModel.user_id.in_(ADMINS),
             )
-            .order_by(MessageModel.user_id.asc(), MessageModel.date_ts.asc())
+            .order_by(MessageModel.user_id.asc(), MessageModel.date_ts.asc(), MessageModel.message_id.asc())
         )
 
         async with db.session() as session:
             res = await session.execute(stmt)
             return [
-                (int(mid), int(ts), int(user_id), username, full_name)
-                for mid, ts, user_id, username, full_name in res.all()
+                (int(mid), int(ts), int(user_id), username, full_name, media_group_id)
+                for mid, ts, user_id, username, full_name, media_group_id in res.all()
             ]
 
     async def add_admin(

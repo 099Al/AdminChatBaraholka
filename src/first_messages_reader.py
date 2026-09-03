@@ -139,6 +139,7 @@ async def main() -> None:
                 text_short=text[:100],
                 text_full_hash=hash_message(text),
                 image_hash=image_hash,
+                media_group_id=str(message.grouped_id) if message.grouped_id is not None else None,
                 reply_to_message_id=message.reply_to_msg_id,
                 original_user_id=original_user_id,
                 original_author=original_author,

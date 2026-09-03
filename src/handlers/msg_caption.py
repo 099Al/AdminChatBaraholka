@@ -64,6 +64,70 @@ def _format_chat_ref(chat: object, *, include_id: bool = False) -> str | None:
     return " | ".join(parts) if parts else None
 
 
+def _origin_date_ts(origin: object) -> int | None:
+    origin_date = getattr(origin, "date", None)
+    if not origin_date:
+        return None
+    return int(origin_date.astimezone(timezone.utc).timestamp())
+
+
+def _origin_source_key(origin: object) -> str | None:
+    sender_user = getattr(origin, "sender_user", None)
+    if sender_user:
+        sender_user_id = getattr(sender_user, "id", None)
+        return f"user:{sender_user_id}" if sender_user_id is not None else None
+
+    sender_user_name = getattr(origin, "sender_user_name", None)
+    if sender_user_name:
+        return f"hidden:{sender_user_name}"
+
+    sender_chat = getattr(origin, "sender_chat", None)
+    if sender_chat:
+        sender_chat_id = getattr(sender_chat, "id", None)
+        return f"chat:{sender_chat_id}" if sender_chat_id is not None else None
+
+    chat = getattr(origin, "chat", None)
+    if chat:
+        chat_id = getattr(chat, "id", None)
+        return f"channel:{chat_id}" if chat_id is not None else None
+
+    return None
+
+
+def _has_media(message: Message) -> bool:
+    return any(
+        getattr(message, field, None) is not None
+        for field in (
+            "animation",
+            "audio",
+            "document",
+            "paid_media",
+            "photo",
+            "sticker",
+            "story",
+            "video",
+            "video_note",
+            "voice",
+        )
+    )
+
+
+def _get_media_group_id(message: Message) -> str | None:
+    if message.media_group_id:
+        return str(message.media_group_id)
+
+    origin = getattr(message, "forward_origin", None)
+    if not origin or not _has_media(message):
+        return None
+
+    source_key = _origin_source_key(origin)
+    date_ts = _origin_date_ts(origin)
+    if source_key is None or date_ts is None:
+        return None
+
+    return f"forwarded:{source_key}:{date_ts}"
+
+
 def _get_original_author(message: Message) -> tuple[int | None, str | None]:
     origin = getattr(message, "forward_origin", None)
     if not origin:
@@ -130,6 +194,7 @@ async def store_all_messages(message: Message):
             text_short=(text or "")[0:100],
             text_full_hash=_hash_message(text),
             image_hash=await _hash_message_photo(message),
+            media_group_id=_get_media_group_id(message),
             reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
             original_user_id=original_user_id,
             original_author=original_author,

@@ -60,6 +60,12 @@ def _parse_dt(value: str | None) -> datetime | None:
         return None
 
 
+def _logical_message_key(message_id: int, media_group_id: str | None) -> str:
+    if media_group_id:
+        return f"group:{media_group_id}"
+    return f"message:{message_id}"
+
+
 def _is_write_restricted_member(member: object) -> bool:
     status = getattr(getattr(member, "status", ""), "value", getattr(member, "status", ""))
     if str(status).lower() != "restricted":
@@ -278,16 +284,16 @@ async def delete_repeat_messages(message: Message):
         await message.answer(f"За {repeat_period} дн. нет сохранённых сообщений в БД.")
         return
 
-    seen: set[tuple[str | None, str | None]] = set()
-    repeat_message_ids: set[int] = set()
-    repeat_message_ids_ordered: list[int] = []
+    grouped_rows: dict[
+        str,
+        dict[str, object],
+    ] = {}
     message_authors: dict[int, tuple[int | None, str | None, str | None]] = {}
     replies_by_parent: dict[int, list[int]] = {}
 
-    # rows уже отсортированы по времени ASC -> первое встретившееся оставляем
     for (
         mid,
-        _,
+        ts,
         _text_short,
         text_full_hash,
         image_hash,
@@ -296,18 +302,48 @@ async def delete_repeat_messages(message: Message):
         sender_user_id,
         username,
         full_name,
+        media_group_id,
     ) in rows:
         message_authors[mid] = (sender_user_id, username, full_name)
         if reply_to_message_id is not None:
             replies_by_parent.setdefault(reply_to_message_id, []).append(mid)
 
-        if not text_full_hash and not image_hash:
+        group_key = _logical_message_key(mid, media_group_id)
+        group = grouped_rows.setdefault(
+            group_key,
+            {
+                "ids": [],
+                "date_ts": ts,
+                "text_hashes": [],
+                "image_hashes": [],
+                "author": (sender_user_id, username, full_name),
+            },
+        )
+        group["ids"].append(mid)
+        if text_full_hash:
+            group["text_hashes"].append(text_full_hash)
+        if image_hash:
+            group["image_hashes"].append(image_hash)
+
+    seen: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
+    repeat_message_ids: set[int] = set()
+    repeat_message_ids_ordered: list[int] = []
+    repeat_roots: set[int] = set()
+
+    # rows уже отсортированы по времени ASC -> первое встретившееся оставляем
+    for group in grouped_rows.values():
+        ids = group["ids"]
+        text_hashes = tuple(group["text_hashes"])
+        image_hashes = tuple(group["image_hashes"])
+        if not text_hashes and not image_hashes:
             continue
 
-        key = (text_full_hash, image_hash)
+        key = (text_hashes, image_hashes)
         if key in seen:
-            repeat_message_ids.add(mid)
-            repeat_message_ids_ordered.append(mid)
+            group_ids = [int(mid) for mid in ids]
+            repeat_message_ids.update(group_ids)
+            repeat_message_ids_ordered.extend(group_ids)
+            repeat_roots.add(group_ids[0])
         else:
             seen.add(key)
 
@@ -336,7 +372,7 @@ async def delete_repeat_messages(message: Message):
         sender_user_id, username, full_name = message_authors.get(mid, (None, None, None))
         try:
             await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
-            if mid in repeat_message_ids and sender_user_id is not None:
+            if mid in repeat_roots and sender_user_id is not None:
                 await repo_clean.add_banned_user(
                     user_id=sender_user_id,
                     username=username,
@@ -385,17 +421,40 @@ async def delete_limit_messages(message: Message):
         return
 
     limit_messages = settings.access.limit_messages
+    grouped_rows: dict[
+        tuple[int, str],
+        dict[str, object],
+    ] = {}
+
+    for mid, ts, sender_user_id, username, full_name, media_group_id in rows:
+        group_key = (sender_user_id, _logical_message_key(mid, media_group_id))
+        group = grouped_rows.setdefault(
+            group_key,
+            {
+                "ids": [],
+                "date_ts": ts,
+                "user_id": sender_user_id,
+                "username": username,
+                "full_name": full_name,
+            },
+        )
+        group["ids"].append(mid)
+
     per_user_count: dict[int, int] = {}
     to_delete: list[tuple[int, int, str | None, str | None]] = []
     limit_users: dict[int, tuple[str | None, str | None]] = {}
 
-    for mid, _, sender_user_id, username, full_name in rows:
+    for group in grouped_rows.values():
+        ids = [int(mid) for mid in group["ids"]]
+        sender_user_id = int(group["user_id"])
+        username = group["username"]
+        full_name = group["full_name"]
         current_count = per_user_count.get(sender_user_id, 0) + 1
         per_user_count[sender_user_id] = current_count
         if current_count <= limit_messages:
             continue
 
-        to_delete.append((mid, sender_user_id, username, full_name))
+        to_delete.extend((mid, sender_user_id, username, full_name) for mid in ids)
         limit_users.setdefault(sender_user_id, (username, full_name))
 
     if not to_delete:
