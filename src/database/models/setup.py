@@ -7,6 +7,33 @@ async def init_db() -> None:
     async with dbconn.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO block_types (block_type, name, description) "
+                "VALUES (1, 'limit', 'Превышение лимита объявлений')"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO block_types (block_type, name, description) "
+                "VALUES (2, 'repeat', 'Повторное объявление')"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE block_types "
+                "SET name = 'limit', description = 'Превышение лимита объявлений' "
+                "WHERE block_type = 1"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE block_types "
+                "SET name = 'repeat', description = 'Повторное объявление' "
+                "WHERE block_type = 2"
+            )
+        )
+
         result = await conn.execute(text("PRAGMA table_info(admins)"))
         columns = {row[1] for row in result.fetchall()}
 
@@ -104,3 +131,7 @@ async def init_db() -> None:
 
         if message_columns and "original_user_id" not in message_columns:
             await conn.execute(text("ALTER TABLE messages ADD COLUMN original_user_id BIGINT"))
+
+        if message_columns and "is_repeated" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN is_repeated INTEGER DEFAULT 0"))
+            await conn.execute(text("UPDATE messages SET is_repeated = 0 WHERE is_repeated IS NULL"))

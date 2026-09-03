@@ -3,13 +3,14 @@ from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 from src.config import settings
 from src.constants import UTC_PLUS_5
 from src.database.repo.repo_clean import repo_clean
 from src.handlers.buttons_txt import button_2_txt
 from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate
+from src.handlers.start_buttons.repeated_review_sender import delete_review_messages, send_repeated_messages_for_review
 
 router = Router()
 
@@ -20,8 +21,14 @@ def _as_str_tuple(value: object) -> tuple[str, ...]:
     return tuple(str(item) for item in value if item)
 
 
+async def _can_moderate_callback(callback: CallbackQuery) -> bool:
+    if callback.from_user.id == settings.access.main_admin_user:
+        return True
+    return await repo_clean.is_admin(callback.from_user.id)
+
+
 @router.message(F.text == button_2_txt)
-async def delete_repeat_messages(message: Message):
+async def find_repeat_messages(message: Message):
     if not message.from_user:
         await message.answer("Не могу определить пользователя.")
         return
@@ -45,8 +52,6 @@ async def delete_repeat_messages(message: Message):
         return
 
     grouped_rows: list[dict[str, object]] = []
-    message_authors: dict[int, tuple[int | None, str | None, str | None]] = {}
-    replies_by_parent: dict[int, list[int]] = {}
 
     for (
         mid,
@@ -54,17 +59,13 @@ async def delete_repeat_messages(message: Message):
         _text_short,
         text_full_hash,
         image_hash,
-        reply_to_message_id,
+        _reply_to_message_id,
         _original_user_id,
         sender_user_id,
         username,
         full_name,
         media_group_id,
     ) in rows:
-        message_authors[mid] = (sender_user_id, username, full_name)
-        if reply_to_message_id is not None:
-            replies_by_parent.setdefault(reply_to_message_id, []).append(mid)
-
         if media_group_id and grouped_rows and grouped_rows[-1].get("media_group_id") == media_group_id:
             group = grouped_rows[-1]
         else:
@@ -85,10 +86,8 @@ async def delete_repeat_messages(message: Message):
 
     seen_exact: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
     seen_image_hashes: set[str] = set()
-    repeat_message_ids: set[int] = set()
     repeat_message_ids_ordered: list[int] = []
-    repeat_roots: set[int] = set()
-    repeat_root_by_message_id: dict[int, int] = {}
+    repeat_message_groups: list[list[int]] = []
 
     for group in grouped_rows:
         ids = [int(mid) for mid in group["ids"]]
@@ -102,67 +101,81 @@ async def delete_repeat_messages(message: Message):
         has_seen_image = bool(image_hash_set & seen_image_hashes)
 
         if exact_key in seen_exact or has_seen_image:
-            repeat_message_ids.update(ids)
             repeat_message_ids_ordered.extend(ids)
-            repeat_roots.add(ids[0])
-            repeat_root_by_message_id.update({mid: ids[0] for mid in ids})
+            repeat_message_groups.append(ids)
         else:
             seen_exact.add(exact_key)
             seen_image_hashes.update(image_hash_set)
 
-    to_delete_ids: list[int] = []
-    to_delete_seen: set[int] = set()
-    to_process = list(repeat_message_ids_ordered)
-    index = 0
-    while index < len(to_process):
-        mid = to_process[index]
-        index += 1
-        if mid in to_delete_seen:
-            continue
-        to_delete_seen.add(mid)
-        to_delete_ids.append(mid)
-        to_process.extend(replies_by_parent.get(mid, ()))
-
-    if not to_delete_ids:
+    if not repeat_message_ids_ordered:
         await message.answer(f"Повторов за {repeat_period} дн. не найдено ✅")
         return
 
-    deleted = 0
-    deleted_replies = 0
-    skipped = 0
-    deleted_repeat_roots: set[int] = set()
+    await repo_clean.mark_messages_repeated(group_chat_id, repeat_message_ids_ordered)
 
-    for mid in to_delete_ids:
+    if not settings.access.forward_repeated_messages:
+        await message.answer(f"Найдено и помечено повторных сообщений: {len(repeat_message_ids_ordered)}")
+        return
+
+    copied, skipped = await send_repeated_messages_for_review(message, group_chat_id, repeat_message_groups)
+
+    await message.answer(
+        f"Найдено и помечено повторных сообщений: {len(repeat_message_ids_ordered)}. "
+        f"Отправлено на проверку объявлений: {copied}, пропущено: {skipped}"
+    )
+
+
+@router.callback_query(F.data.startswith("repeat:keep:"))
+async def keep_repeated_message(callback: CallbackQuery):
+    if not callback.message:
+        return
+    if not await _can_moderate_callback(callback):
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+
+    _, _, chat_id_raw, message_id_raw = (callback.data or "").split(":", maxsplit=3)
+    group_chat_id = int(chat_id_raw)
+    message_id = int(message_id_raw)
+    await repo_clean.clear_repeated_by_message(group_chat_id, message_id)
+    await delete_review_messages(callback, group_chat_id, message_id)
+    await callback.answer("Пометка снята.")
+
+
+@router.callback_query(F.data.startswith("repeat:delete:"))
+async def delete_repeated_message(callback: CallbackQuery):
+    if not callback.message:
+        return
+    if not await _can_moderate_callback(callback):
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+
+    _, _, chat_id_raw, message_id_raw = (callback.data or "").split(":", maxsplit=3)
+    group_chat_id = int(chat_id_raw)
+    message_id = int(message_id_raw)
+    message_ids = await repo_clean.get_logical_message_ids(group_chat_id, message_id)
+    author = await repo_clean.get_message_author(group_chat_id, message_id)
+
+    deleted = 0
+    for mid in message_ids:
         try:
-            await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
-            if mid in repeat_message_ids:
-                deleted_repeat_roots.add(repeat_root_by_message_id.get(mid, mid))
+            await callback.bot.delete_message(chat_id=group_chat_id, message_id=mid)
             await repo_clean.delete_record(group_chat_id, mid)
             deleted += 1
-            if mid not in repeat_message_ids:
-                deleted_replies += 1
             await asyncio.sleep(0.05)
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after + 0.5)
         except TelegramForbiddenError:
-            await message.answer("❌ Нет прав удалять сообщения в группе (бот должен быть админом с Delete messages).")
+            await callback.answer("Нет прав удалять сообщения.", show_alert=True)
             return
         except TelegramBadRequest:
-            skipped += 1
             await repo_clean.delete_record(group_chat_id, mid)
 
-    for root_mid in deleted_repeat_roots:
-        if root_mid not in repeat_roots:
-            continue
-        sender_user_id, username, full_name = message_authors.get(root_mid, (None, None, None))
-        if sender_user_id is None:
-            continue
+    if deleted and author and author[0] is not None:
         await repo_clean.add_banned_user(
-            user_id=sender_user_id,
-            username=username,
-            full_name=full_name,
+            user_id=author[0],
+            username=author[1],
+            full_name=author[2],
         )
 
-    await message.answer(
-        f"Готово ✅ Удалено повторов: {deleted - deleted_replies}, ответов к ним: {deleted_replies}, пропущено: {skipped}"
-    )
+    await delete_review_messages(callback, group_chat_id, message_id)
+    await callback.answer("Удалено." if deleted else "Сообщений уже нет.")

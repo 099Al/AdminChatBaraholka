@@ -20,6 +20,7 @@ class MessageModel(Base):
     created_at: Mapped[str] = mapped_column(Text)
     date_ts: Mapped[int] = mapped_column(Integer, index=True)
     has_keywords: Mapped[int] = mapped_column(Integer, index=True)  # 0/1
+    is_repeated: Mapped[int] = mapped_column(Integer, default=0, index=True)
 
     # опционально (если хочешь хранить автора)
     user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -43,6 +44,14 @@ class AdminModel(Base):
     created_at: Mapped[str] = mapped_column(Text)
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BlockTypeModel(Base):
+    __tablename__ = "block_types"
+
+    block_type: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
 
 
 class UserBannedModel(Base):

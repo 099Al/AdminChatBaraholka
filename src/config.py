@@ -76,6 +76,7 @@ class AccessSettings(BaseSettings):
     blocked_after_limit_days: int = Field(1, alias="BLOCKED_AFTER_LIMIT_DAYS")
     blocked_after_repeat_days: int = Field(7, alias="BLOCKED_AFTER_REPEAT_DAYS")
     repeat_period: int = Field(7, alias="REPEAT_PERIOD")
+    forward_repeated_messages: bool = Field(False, alias="FORWARD_REPEATED_MESSAGES")
 
 
 class Settings:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import case, func, select, delete, and_, or_
+from sqlalchemy import case, func, select, delete, and_, or_, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import aliased
 
@@ -10,6 +10,7 @@ from src.constants import UTC_PLUS_5, ADMINS
 from src.database.connect import db
 from src.database.models.model_clean import (
     AdminModel,
+    BlockTypeModel,
     MessageModel,
     UserBannedModel,
     UserChatBindingModel,
@@ -284,6 +285,110 @@ class RepoClean:
             await session.execute(stmt)
             await session.commit()
 
+    async def mark_messages_repeated(self, chat_id: int, message_ids: list[int]) -> None:
+        if not message_ids:
+            return
+        stmt = (
+            update(MessageModel)
+            .where(
+                MessageModel.chat_id == chat_id,
+                MessageModel.message_id.in_(message_ids),
+            )
+            .values(is_repeated=1)
+        )
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def clear_repeated_by_message(self, chat_id: int, message_id: int) -> list[int]:
+        async with db.session() as session:
+            message_ids = await self._get_logical_message_ids_in_session(session, chat_id, message_id)
+            if not message_ids:
+                return []
+
+            clear_stmt = (
+                update(MessageModel)
+                .where(
+                    MessageModel.chat_id == chat_id,
+                    MessageModel.message_id.in_(message_ids),
+                )
+                .values(is_repeated=0)
+            )
+            await session.execute(clear_stmt)
+            await session.commit()
+            return message_ids
+
+    async def get_logical_message_ids(self, chat_id: int, message_id: int) -> list[int]:
+        async with db.session() as session:
+            return await self._get_logical_message_ids_in_session(session, chat_id, message_id)
+
+    async def _get_logical_message_ids_in_session(self, session, chat_id: int, message_id: int) -> list[int]:
+        rows_stmt = (
+            select(MessageModel.message_id, MessageModel.media_group_id)
+            .where(MessageModel.chat_id == chat_id)
+            .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
+        )
+        rows_res = await session.execute(rows_stmt)
+        rows = [(int(mid), media_group_id) for mid, media_group_id in rows_res.all()]
+        selected_index = next((index for index, (mid, _) in enumerate(rows) if mid == message_id), None)
+        if selected_index is None:
+            return []
+
+        selected_media_group_id = rows[selected_index][1]
+        if not selected_media_group_id:
+            return [message_id]
+
+        start = selected_index
+        while start > 0 and rows[start - 1][1] == selected_media_group_id:
+            start -= 1
+
+        end = selected_index
+        while end + 1 < len(rows) and rows[end + 1][1] == selected_media_group_id:
+            end += 1
+
+        return [mid for mid, _ in rows[start : end + 1]]
+
+    async def get_repeated_messages(
+        self,
+        chat_id: int,
+    ) -> list[tuple[int, int | None, str | None, str | None, str | None]]:
+        stmt = (
+            select(
+                MessageModel.message_id,
+                MessageModel.user_id,
+                MessageModel.username,
+                MessageModel.full_name,
+                MessageModel.media_group_id,
+            )
+            .where(
+                MessageModel.chat_id == chat_id,
+                MessageModel.is_repeated == 1,
+            )
+            .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
+        )
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return [
+                (int(mid), user_id, username, full_name, media_group_id)
+                for mid, user_id, username, full_name, media_group_id in res.all()
+            ]
+
+    async def get_message_author(
+        self,
+        chat_id: int,
+        message_id: int,
+    ) -> tuple[int | None, str | None, str | None] | None:
+        stmt = select(MessageModel.user_id, MessageModel.username, MessageModel.full_name).where(
+            MessageModel.chat_id == chat_id,
+            MessageModel.message_id == message_id,
+        )
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            row = res.first()
+            if not row:
+                return None
+            return row[0], row[1], row[2]
+
     async def remove_admin(self, user_id: int) -> None:
         stmt = delete(AdminModel).where(AdminModel.user_id == user_id)
 
@@ -315,6 +420,20 @@ class RepoClean:
                 (int(user_id), username, full_name, str(created_at))
                 for user_id, username, full_name, created_at in res.all()
             ]
+
+    async def get_block_types(self) -> list[tuple[int, str, str]]:
+        stmt = (
+            select(
+                BlockTypeModel.block_type,
+                BlockTypeModel.name,
+                BlockTypeModel.description,
+            )
+            .order_by(BlockTypeModel.block_type.asc())
+        )
+
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return [(int(block_type), str(name), str(description)) for block_type, name, description in res.all()]
 
     async def add_banned_user(
         self,

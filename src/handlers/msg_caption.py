@@ -8,12 +8,12 @@ from aiogram.types import Message
 from src.constants import UTC_PLUS_5, KEYWORDS
 from src.database.repo.repo_clean import repo_clean
 
-from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt
+from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt, button_6_txt
 
 caption_router = Router()
 
 
-BUTTON_TEXTS = {button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt}
+BUTTON_TEXTS = {button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt, button_6_txt}
 
 
 def _has_required_keywords(text: str | None) -> bool:

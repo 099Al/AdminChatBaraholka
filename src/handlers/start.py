@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 from src.config import settings
 from src.database.repo.repo_clean import repo_clean
-from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt
+from src.handlers.buttons_txt import button_1_txt, button_2_txt, button_3_txt, button_4_txt, button_5_txt, button_6_txt
 from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate, _is_main_admin
 
 start_router = Router()
@@ -34,7 +34,8 @@ async def start_handler(message: Message):
     kb.button(text=button_5_txt)
     kb.button(text=button_1_txt)
     kb.button(text=button_4_txt)
-    kb.adjust(1, 2, 2)
+    kb.button(text=button_6_txt)
+    kb.adjust(1, 2, 2, 1)
 
     await message.answer(
             "Выберите действие:",

@@ -3,13 +3,18 @@ from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import ChatPermissions, Message
+from aiogram.types import Message
 
 from src.config import settings
 from src.constants import UTC_PLUS_5
 from src.database.repo.repo_clean import repo_clean
 from src.handlers.buttons_txt import button_4_txt
-from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate
+from src.handlers.start_buttons.common import (
+    _answer_access_denied,
+    _can_moderate,
+    _full_write_permissions,
+    _read_only_permissions,
+)
 
 router = Router()
 
@@ -32,36 +37,6 @@ def _is_write_restricted_member(member: object) -> bool:
     if str(status).lower() != "restricted":
         return False
     return getattr(member, "can_send_messages", True) is False
-
-
-def _read_only_permissions() -> ChatPermissions:
-    return ChatPermissions(
-        can_send_messages=False,
-        can_send_audios=False,
-        can_send_documents=False,
-        can_send_photos=False,
-        can_send_videos=False,
-        can_send_video_notes=False,
-        can_send_voice_notes=False,
-        can_send_polls=False,
-        can_send_other_messages=False,
-        can_add_web_page_previews=False,
-    )
-
-
-def _full_write_permissions() -> ChatPermissions:
-    return ChatPermissions(
-        can_send_messages=True,
-        can_send_audios=True,
-        can_send_documents=True,
-        can_send_photos=True,
-        can_send_videos=True,
-        can_send_video_notes=True,
-        can_send_voice_notes=True,
-        can_send_polls=True,
-        can_send_other_messages=True,
-        can_add_web_page_previews=True,
-    )
 
 
 @router.message(F.text == button_4_txt)
