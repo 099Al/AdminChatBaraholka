@@ -155,13 +155,7 @@ def _get_original_author(message: Message) -> tuple[int | None, str | None]:
     return None, None
 
 
-@caption_router.message(
-     F.chat.type.in_({"group", "supergroup"}),     # собирать только в группах
-    ~F.text.in_(BUTTON_TEXTS),                    # не сохранять нажатия кнопок
-    ~F.text.startswith("/"),                      # не сохранять команды
-    ~F.from_user.is_bot,                      # НЕ сообщения бота
-)
-async def store_all_messages(message: Message):
+async def save_message(message: Message) -> None:
     # интересует только то, что можно проверять по тексту/подписи
     text = message.text or message.caption
     if message.reply_to_message:
@@ -204,4 +198,24 @@ async def store_all_messages(message: Message):
             username=username,
             full_name=full_name,
     )
+
+
+@caption_router.message(
+     F.chat.type.in_({"group", "supergroup"}),     # собирать только в группах
+    ~F.text.in_(BUTTON_TEXTS),                    # не сохранять нажатия кнопок
+    ~F.text.startswith("/"),                      # не сохранять команды
+    ~F.from_user.is_bot,                      # НЕ сообщения бота
+)
+async def store_all_messages(message: Message):
+    await save_message(message)
+
+
+@caption_router.edited_message(
+     F.chat.type.in_({"group", "supergroup"}),     # обновлять только в группах
+    ~F.text.in_(BUTTON_TEXTS),                    # не сохранять нажатия кнопок
+    ~F.text.startswith("/"),                      # не сохранять команды
+    ~F.from_user.is_bot,                      # НЕ сообщения бота
+)
+async def update_edited_message(message: Message):
+    await save_message(message)
 
