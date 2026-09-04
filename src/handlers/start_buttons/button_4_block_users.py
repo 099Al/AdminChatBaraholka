@@ -8,7 +8,7 @@ from aiogram.types import Message
 from src.config import settings
 from src.constants import UTC_PLUS_5
 from src.database.repo.repo_clean import repo_clean
-from src.handlers.buttons_txt import button_4_txt
+from src.handlers.buttons_txt import button_5_txt
 from src.handlers.start_buttons.common import (
     _answer_access_denied,
     _can_moderate,
@@ -39,7 +39,7 @@ def _is_write_restricted_member(member: object) -> bool:
     return getattr(member, "can_send_messages", True) is False
 
 
-@router.message(F.text == button_4_txt)
+@router.message(F.text == button_5_txt)
 async def block_banned_users(message: Message):
     if not await _can_moderate(message):
         await _answer_access_denied(message)

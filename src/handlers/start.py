@@ -29,11 +29,11 @@ async def _get_user_display_info(message: Message, user_id: int) -> tuple[str | 
 @start_router.message(CommandStart())
 async def start_handler(message: Message):
     kb = ReplyKeyboardBuilder()
-    kb.button(text=button_3_txt)
-    kb.button(text=button_2_txt)
-    kb.button(text=button_5_txt)
     kb.button(text=button_1_txt)
+    kb.button(text=button_2_txt)
+    kb.button(text=button_3_txt)
     kb.button(text=button_4_txt)
+    kb.button(text=button_5_txt)
     kb.button(text=button_6_txt)
     kb.adjust(1, 2, 2, 1)
 

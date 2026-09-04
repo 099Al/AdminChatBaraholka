@@ -2,13 +2,13 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from src.database.repo.repo_clean import repo_clean
-from src.handlers.buttons_txt import button_3_txt
+from src.handlers.buttons_txt import button_1_txt
 from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate
 
 router = Router()
 
 
-@router.message(F.text == button_3_txt)
+@router.message(F.text == button_1_txt)
 async def check_delete_availability(message: Message):
     if not await _can_moderate(message):
         await _answer_access_denied(message)

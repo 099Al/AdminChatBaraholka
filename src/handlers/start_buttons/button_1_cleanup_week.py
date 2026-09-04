@@ -7,13 +7,13 @@ from aiogram.types import Message
 
 from src.constants import UTC_PLUS_5
 from src.database.repo.repo_clean import repo_clean
-from src.handlers.buttons_txt import button_1_txt
+from src.handlers.buttons_txt import button_4_txt
 from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate
 
 router = Router()
 
 
-@router.message(F.text == button_1_txt)
+@router.message(F.text == button_4_txt)
 async def cleanup_week(message: Message) -> None:
     if not await _can_moderate(message):
         await _answer_access_denied(message)
