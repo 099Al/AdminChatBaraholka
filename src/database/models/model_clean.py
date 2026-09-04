@@ -25,6 +25,7 @@ class MessageModel(Base):
         ForeignKey("message_types.message_type"), nullable=True, index=True
     )
     errors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved: Mapped[int] = mapped_column(Integer, default=0, index=True)
 
     # опционально (если хочешь хранить автора)
     user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -115,6 +116,8 @@ class UserBannedModel(Base):
     is_blocked: Mapped[int] = mapped_column(Integer, default=0)
     block_repeat_cnt: Mapped[int] = mapped_column(Integer, default=1)
     block_limit: Mapped[int] = mapped_column(Integer, default=0)
+    invalid_ads_count: Mapped[int] = mapped_column(Integer, default=0)
+    flood_count: Mapped[int] = mapped_column(Integer, default=0)
     block_type: Mapped[int | None] = mapped_column(Integer, nullable=True)
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)

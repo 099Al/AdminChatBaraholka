@@ -135,6 +135,16 @@ async def init_db() -> None:
                 )
             )
 
+        if user_banned_columns and "invalid_ads_count" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN invalid_ads_count INTEGER DEFAULT 0"))
+            await conn.execute(
+                text("UPDATE user_banned SET invalid_ads_count = 0 WHERE invalid_ads_count IS NULL")
+            )
+
+        if user_banned_columns and "flood_count" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN flood_count INTEGER DEFAULT 0"))
+            await conn.execute(text("UPDATE user_banned SET flood_count = 0 WHERE flood_count IS NULL"))
+
         result = await conn.execute(text("PRAGMA table_info(messages)"))
         message_columns = {row[1] for row in result.fetchall()}
 
@@ -175,6 +185,10 @@ async def init_db() -> None:
 
         if message_columns and "errors" not in message_columns:
             await conn.execute(text("ALTER TABLE messages ADD COLUMN errors TEXT"))
+
+        if message_columns and "approved" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN approved INTEGER DEFAULT 0"))
+            await conn.execute(text("UPDATE messages SET approved = 0 WHERE approved IS NULL"))
 
         await conn.execute(
             text(

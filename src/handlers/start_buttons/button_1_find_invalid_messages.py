@@ -2,25 +2,13 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from src.classifiers.service import ClassificationBackendError, classify_pending_messages
+from src.config import settings
 from src.database.repo.repo_clean import repo_clean
 from src.handlers.buttons_txt import button_4_txt
 from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate
+from src.handlers.start_buttons.invalid_review import send_noncompliant_messages_for_review
 
 router = Router()
-
-MESSAGE_TYPES = {
-    1: "Объявление",
-    2: "Уточнение",
-    3: "Куплю/ищу",
-    4: "Флуд",
-}
-ERRORS = {
-    1: "нет адреса",
-    2: "нет стоимости",
-    3: "нет картинки",
-    4: "флуд",
-}
-
 
 @router.message(F.text == button_4_txt)
 async def find_invalid_messages(message: Message) -> None:
@@ -40,7 +28,10 @@ async def find_invalid_messages(message: Message) -> None:
         await message.answer(f"Не удалось выполнить классификацию: {error}")
         return
 
-    total, invalid_messages = await repo_clean.get_noncompliant_messages(group_chat_id)
+    total, invalid_messages = await repo_clean.get_noncompliant_messages(
+        group_chat_id,
+        limit=settings.openai.process_message,
+    )
     if not invalid_messages:
         await message.answer(
             f"Проверка завершена. Обработано новых сообщений: {processed}. "
@@ -48,18 +39,23 @@ async def find_invalid_messages(message: Message) -> None:
         )
         return
 
-    lines = [
-        f"Проверка завершена. Обработано новых: {processed}. Некорректных: {total}.",
-        "",
-    ]
-    for message_id, message_type, error_codes, text_short in invalid_messages:
-        error_text = ", ".join(ERRORS[code] for code in error_codes) or "без описания"
-        preview = text_short.replace("\n", " ")[:80]
-        lines.append(
-            f"#{message_id} — {MESSAGE_TYPES.get(message_type, 'Неизвестный тип')}; "
-            f"ошибки: {error_text}; {preview}"
+    if not settings.openai.send_invalid_messages_to_bot:
+        await message.answer(
+            f"Проверка завершена. Обработано новых: {processed}. "
+            f"Некорректных сообщений отмечено: {total}. "
+            "Отправка сообщений в бот отключена."
         )
+        return
 
+    sent, skipped = await send_noncompliant_messages_for_review(
+        message,
+        group_chat_id,
+        invalid_messages,
+    )
+    answer = (
+        f"Проверка завершена. Обработано новых: {processed}. "
+        f"Некорректных: {total}. Отправлено на проверку: {sent}. Пропущено: {skipped}."
+    )
     if total > len(invalid_messages):
-        lines.append(f"\nПоказаны последние {len(invalid_messages)} из {total} сообщений.")
-    await message.answer("\n".join(lines))
+        answer += f" Показаны последние {len(invalid_messages)} из {total}."
+    await message.answer(answer)

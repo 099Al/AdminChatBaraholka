@@ -6,6 +6,7 @@ from src.handlers.start_buttons.button_3_check_delete import router as button_3_
 from src.handlers.start_buttons.button_4_block_users import router as button_4_router
 from src.handlers.start_buttons.button_5_delete_limit import router as button_5_router
 from src.handlers.start_buttons.button_6_delete_marked_repeats import router as button_6_router
+from src.handlers.start_buttons.invalid_review import router as invalid_review_router
 
 start_buttons_router = Router()
 start_buttons_router.include_router(button_1_router)
@@ -14,3 +15,4 @@ start_buttons_router.include_router(button_3_router)
 start_buttons_router.include_router(button_4_router)
 start_buttons_router.include_router(button_5_router)
 start_buttons_router.include_router(button_6_router)
+start_buttons_router.include_router(invalid_review_router)

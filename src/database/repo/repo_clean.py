@@ -54,6 +54,7 @@ class RepoClean:
             )
             .where(
                 MessageModel.message_type.is_(None),
+                MessageModel.approved == 0,
                 MessageModel.chat_id == chat_id if chat_id is not None else True,
             )
             .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
@@ -84,19 +85,25 @@ class RepoClean:
     async def get_noncompliant_messages(
         self,
         chat_id: int,
-        limit: int = 50,
-    ) -> tuple[int, list[tuple[int, int, list[int], str]]]:
+        limit: int = 500,
+    ) -> tuple[int, list[tuple[int, int, list[int], str, int | None, str | None]]]:
         condition = or_(
             MessageModel.message_type == 4,
             and_(MessageModel.errors.is_not(None), MessageModel.errors != "[]"),
         )
-        base_condition = and_(MessageModel.chat_id == chat_id, condition)
+        base_condition = and_(
+            MessageModel.chat_id == chat_id,
+            MessageModel.approved == 0,
+            condition,
+        )
         rows_stmt = (
             select(
                 MessageModel.message_id,
                 MessageModel.message_type,
                 MessageModel.errors,
                 MessageModel.text_short,
+                MessageModel.user_id,
+                MessageModel.media_group_id,
             )
             .where(base_condition)
             .order_by(MessageModel.date_ts.desc(), MessageModel.message_id.desc())
@@ -109,11 +116,13 @@ class RepoClean:
             return total, [
                 (
                     int(message_id),
-                    int(message_type),
+                    int(message_type or 4),
                     [int(code) for code in json.loads(errors or "[]")],
                     str(text_short or ""),
+                    user_id,
+                    media_group_id,
                 )
-                for message_id, message_type, errors, text_short in rows
+                for message_id, message_type, errors, text_short, user_id, media_group_id in rows
             ]
 
     async def save_message_classifications(
@@ -272,7 +281,7 @@ class RepoClean:
                     user_id=user_id,
                     username=username,
                     full_name=full_name,
-                    **({"message_type": None, "errors": None} if changed else {}),
+                    **({"message_type": None, "errors": None, "approved": 0} if changed else {}),
                 ),
             )
             await session.execute(stmt)
@@ -389,6 +398,57 @@ class RepoClean:
         for message_id in missing_ids:
             await self.delete_record(chat_id, message_id)
         return len(missing_ids)
+
+    async def approve_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        *,
+        clear_classification: bool = False,
+    ) -> None:
+        values: dict[str, object] = {"approved": 1}
+        if clear_classification:
+            values.update(message_type=None, errors=None)
+
+        async with db.session() as session:
+            await session.execute(
+                update(MessageModel)
+                .where(
+                    MessageModel.chat_id == chat_id,
+                    MessageModel.message_id == message_id,
+                )
+                .values(**values)
+            )
+            if clear_classification:
+                await session.execute(
+                    delete(MessageErrorModel).where(
+                        MessageErrorModel.chat_id == chat_id,
+                        MessageErrorModel.message_id == message_id,
+                    )
+                )
+            await session.commit()
+
+    async def increment_message_violation(self, user_id: int, violation: str) -> None:
+        if violation == "invalid_ad":
+            column = UserBannedModel.invalid_ads_count
+            values = {"invalid_ads_count": 1}
+        elif violation == "flood":
+            column = UserBannedModel.flood_count
+            values = {"flood_count": 1}
+        else:
+            raise ValueError(f"Unknown violation type: {violation}")
+
+        stmt = insert(UserBannedModel).values(
+            user_id=user_id,
+            created_at="",
+            **values,
+        ).on_conflict_do_update(
+            index_elements=[UserBannedModel.user_id],
+            set_={column.key: func.coalesce(column, 0) + 1},
+        )
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
 
     async def set_user_active_chat(self, user_id: int, chat_id: int) -> None:
         stmt = insert(UserChatBindingModel).values(
@@ -844,10 +904,25 @@ class RepoClean:
     async def clear_user_block(self, user_id: int) -> None:
         stmt = (
             insert(UserBannedModel)
-            .values(user_id=user_id, created_at="", blocked_until=None, is_blocked=0, block_type=None)
+            .values(
+                user_id=user_id,
+                created_at="",
+                blocked_until=None,
+                is_blocked=0,
+                block_type=None,
+                invalid_ads_count=0,
+                flood_count=0,
+            )
             .on_conflict_do_update(
                 index_elements=[UserBannedModel.user_id],
-                set_=dict(created_at="", blocked_until=None, is_blocked=0, block_type=None),
+                set_=dict(
+                    created_at="",
+                    blocked_until=None,
+                    is_blocked=0,
+                    block_type=None,
+                    invalid_ads_count=0,
+                    flood_count=0,
+                ),
             )
         )
 

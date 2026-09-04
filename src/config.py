@@ -93,6 +93,10 @@ class OpenAISettings(BaseSettings):
     model: str = Field("gpt-5-mini", alias="OPENAI_MODEL")
     process_message: int = Field(500, alias="PROCESS_MESSAGE", ge=1)
     classification_enabled: bool = Field(True, alias="ENABLE_MESSAGE_CLASSIFICATION")
+    send_invalid_messages_to_bot: bool = Field(
+        False,
+        alias="SEND_INVALID_MESSAGES_TO_BOT",
+    )
     classification_backend: Literal["local", "ollama", "openai"] = Field(
         "openai", alias="MESSAGE_CLASSIFICATION_BACKEND"
     )
