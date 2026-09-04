@@ -74,6 +74,7 @@ MAIN_ADMIN_USER=123456789
 DB_URL=sqlite+aiosqlite:///data/bot.db
 API_ID=12345678
 API_HASH=telegram_api_hash
+PHONE=+79991234567
 TELETHON_TARGET=https://t.me/example_group
 TELETHON_LIMIT=5000
 TELETHON_SESSION_NAME=data/tg_session
@@ -99,7 +100,7 @@ TELETHON_LIMIT=5000
 TELETHON_SESSION_NAME=data/tg_session
 ```
 
-`BOT_TOKEN` берется у `@BotFather`. `MAIN_ADMIN_USER` - это Telegram user ID главного администратора бота. Его можно узнать командой `/get_id` в боте. `API_ID` и `API_HASH` берутся в кабинете Telegram: https://my.telegram.org -> `API development tools`.
+`BOT_TOKEN` берется у `@BotFather`. `MAIN_ADMIN_USER` - это Telegram user ID главного администратора бота. Его можно узнать командой `/get_id` в боте. `API_ID` и `API_HASH` берутся в кабинете Telegram: https://my.telegram.org -> `API development tools`. `PHONE` — номер аккаунта Telethon в международном формате.
 
 Аккаунт, который будет использоваться в Telethon, должен быть участником группы из `TELETHON_TARGET`. Если группа приватная, сначала войдите в нее обычным Telegram-клиентом по invite-ссылке.
 
@@ -109,10 +110,10 @@ Telethon нужен, чтобы загрузить старую историю �
 
 ```bash
 uv sync
-uv run python src/method/reader.py
+uv run python -m src.first_messages_reader
 ```
 
-При первом запуске скрипт запросит телефон и код входа Telegram. После успешной авторизации он создаст session-файл, например:
+При первом запуске скрипт возьмет телефон из `PHONE` в `.env` и запросит только код входа Telegram. После успешной авторизации он создаст session-файл, например:
 
 ```text
 data/tg_session.session
@@ -189,7 +190,7 @@ MAIN_ADMIN_USER=123456789
 
 - новые сообщения, которые увидел работающий `aiogram`-бот;
 - накопленные Telegram updates после короткого простоя бота;
-- старая история, загруженная через `src/method/reader.py`.
+- старая история, загруженная через `src.first_messages_reader`.
 
 При удалении повторов бот также добавляет автора удаленного повторного сообщения в таблицу `user_banned`. Если пользователь уже есть в таблице, бот обновляет дату и увеличивает `cnt` на 1.
 

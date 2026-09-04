@@ -51,6 +51,7 @@ class ReaderSettings(BaseSettings):
 
     api_id: int = Field(..., alias="API_ID")
     api_hash: str = Field(..., alias="API_HASH")
+    phone: str = Field(..., alias="PHONE")
     session_name: str = Field("src/method/tg_session", alias="TELETHON_SESSION_NAME")
     target: str = Field(..., alias="TELETHON_TARGET")
     limit: int = Field(5000, alias="TELETHON_LIMIT")

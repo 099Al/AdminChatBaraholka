@@ -114,7 +114,7 @@ async def read_all_messages(*, init_database: bool = True, dispose_db: bool = Tr
         await client.connect()
 
         if not await client.is_user_authorized():
-            phone = input("Enter phone: ")
+            phone = reader_settings.phone
             await client.send_code_request(phone)
             code = input("Enter code: ")
             await client.sign_in(phone, code)
