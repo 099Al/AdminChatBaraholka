@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from telethon import TelegramClient, utils
@@ -109,6 +110,7 @@ async def read_all_messages(*, init_database: bool = True, dispose_db: bool = Tr
 
     saved = 0
     skipped_empty = 0
+    removed_deleted = 0
 
     try:
         await client.connect()
@@ -121,8 +123,15 @@ async def read_all_messages(*, init_database: bool = True, dispose_db: bool = Tr
 
         chat = await client.get_entity(reader_settings.target)
         bot_chat_id = utils.get_peer_id(chat)
+        cutoff = datetime.now(UTC_PLUS_5) - timedelta(days=settings.access.message_retention_days)
+        cutoff_ts = int(cutoff.timestamp())
+        seen_message_ids: set[int] = set()
 
-        async for message in client.iter_messages(chat, limit=reader_settings.limit):
+        async for message in client.iter_messages(chat, limit=None):
+            if message.date.astimezone(UTC_PLUS_5) < cutoff:
+                break
+
+            seen_message_ids.add(message.id)
             text = safe_text(message.message)
             image_hash = await hash_message_photo(message)
             if not text and not image_hash:
@@ -138,6 +147,7 @@ async def read_all_messages(*, init_database: bool = True, dispose_db: bool = Tr
                 chat_id=bot_chat_id,
                 message_id=message.id,
                 text_short=text[:100],
+                text_full=text,
                 text_full_hash=hash_message(text),
                 image_hash=image_hash,
                 media_group_id=str(message.grouped_id) if message.grouped_id is not None else None,
@@ -153,8 +163,15 @@ async def read_all_messages(*, init_database: bool = True, dispose_db: bool = Tr
             )
             saved += 1
 
+        removed_deleted = await repo_clean.delete_messages_missing_from_snapshot(
+            bot_chat_id,
+            seen_message_ids,
+            cutoff_ts,
+        )
+
         print(f"Saved {saved} messages to database for chat_id={bot_chat_id}.")
         print(f"Skipped empty/service messages: {skipped_empty}.")
+        print(f"Removed messages no longer present in Telegram: {removed_deleted}.")
     finally:
         await client.disconnect()
         if dispose_db:
@@ -169,22 +186,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-'''
-  в .env указать адроесс группы
-  TELETHON_TARGET=@public_group_username
-  или:
-  TELETHON_TARGET=https://t.me/public_group_username
-  или для приватной группы:                                                                                                                                                                                                                                                                                         
-  TELETHON_TARGET=https://t.me/+invite_link                                                                                                                                                                                                                                                                         
-  Важно: аккаунт, под которым входит Telethon, должен быть участником этой группы. Для приватной группы сначала вступи в неё обычным Telegram-аккаунтом.                                                                                                                                                            
-  Запуск из корня проекта:                                                                                                                                                                                                                                                                                          
-  uv run python src/first_messages_reader.py                                                                                                                                                                                                                                                                        
-  Что произойдет:                                                                                                                                                                                                                                                                                                   
-  1. Telethon войдет в аккаунт.                                                                                                                                                                                                                                                                                     
-  2. Найдет группу из TELETHON_TARGET.                                                                                                                                                                                                                                                                              
-  3. Прочитает последние TELETHON_LIMIT сообщений.                                                                                                                                                                                                                                                                  
-  4. Запишет их в SQLite-базу data/bot.db.                                                                                                                                                                                                                                                                          
-  5. Выведет примерно:                              
-'''

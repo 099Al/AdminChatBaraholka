@@ -52,6 +52,10 @@ URL базы можно переопределить переменной окр
 Основные таблицы:
 
 - `messages` - сохраненные сообщения групп.
+- `message_full_texts` - полный текст сообщений.
+- `message_types` - справочник типов сообщений.
+- `message_error_types` - справочник возможных ошибок.
+- `message_errors` - найденные ошибки конкретных сообщений.
 - `user_chat_bindings` - связь пользователя с активной группой, выбранной через `/bind`.
 - `admins` - дополнительные пользователи, которым разрешено управлять удалением через бота; хранит `user_id`, `username`, `full_name` и дату добавления.
 - `user_banned` - пользователи, чьи повторные сообщения были удалены ботом; хранит `user_id`, `username`, `full_name`, дату последнего внесения и счетчик `cnt`.
@@ -67,6 +71,9 @@ BOT_TOKEN=telegram_bot_token
 ENV=DEV
 MAIN_ADMIN_USER=123456789
 MESSAGE_RETENTION_DAYS=7
+PROCESS_MESSAGE=500
+OPENAI_API_KEY=sk-your-openai-api-key
+OPENAI_MODEL=gpt-5-mini
 ```
 
 Опционально:
@@ -77,7 +84,6 @@ API_ID=12345678
 API_HASH=telegram_api_hash
 PHONE=+79991234567
 TELETHON_TARGET=https://t.me/example_group
-TELETHON_LIMIT=5000
 TELETHON_SESSION_NAME=data/tg_session
 ```
 
@@ -97,7 +103,6 @@ MAIN_ADMIN_USER=123456789
 API_ID=12345678
 API_HASH=telegram_api_hash
 TELETHON_TARGET=https://t.me/example_group
-TELETHON_LIMIT=5000
 TELETHON_SESSION_NAME=data/tg_session
 ```
 
@@ -120,7 +125,9 @@ uv run python -m src.first_messages_reader
 data/tg_session.session
 ```
 
-Затем скрипт прочитает последние `TELETHON_LIMIT` сообщений из `TELETHON_TARGET` и сохранит текстовые сообщения в таблицу `messages`. В конце он выведет количество сохраненных и пропущенных сообщений.
+Затем скрипт прочитает сообщения из `TELETHON_TARGET` за срок
+`MESSAGE_RETENTION_DAYS`, сохранит их в таблицу `messages` и удалит из БД записи,
+которых больше нет в Telegram.
 
 Пример успешного результата:
 
@@ -209,6 +216,15 @@ uv run python -m src.run
 
 ```bash
 uv run python -m src.cleanup_old_messages
+```
+
+После синхронизации бот отправляет в OpenAI до `PROCESS_MESSAGE` ещё не
+классифицированных сообщений. Повторно обработанные сообщения не отправляются;
+после редактирования текста, картинки, альбома или связи с ответом классификация
+сбрасывается. Классификацию можно запустить отдельно:
+
+```bash
+uv run python -m src.classify_messages
 ```
 
 Перед запуском нужно создать `.env` с `BOT_TOKEN`.

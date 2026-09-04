@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Integer, Text
+from sqlalchemy import BigInteger, ForeignKey, ForeignKeyConstraint, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database.models.base import Base
@@ -21,11 +21,63 @@ class MessageModel(Base):
     date_ts: Mapped[int] = mapped_column(Integer, index=True)
     has_keywords: Mapped[int] = mapped_column(Integer, index=True)  # 0/1
     is_repeated: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    message_type: Mapped[int | None] = mapped_column(
+        ForeignKey("message_types.message_type"), nullable=True, index=True
+    )
+    errors: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # опционально (если хочешь хранить автора)
     user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MessageFullTextModel(Base):
+    __tablename__ = "message_full_texts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["chat_id", "message_id"],
+            ["messages.chat_id", "messages.message_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    full_text: Mapped[str] = mapped_column(Text, default="")
+
+
+class MessageTypeModel(Base):
+    __tablename__ = "message_types"
+
+    message_type: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
+
+
+class MessageErrorTypeModel(Base):
+    __tablename__ = "message_error_types"
+
+    error_type: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
+
+
+class MessageErrorModel(Base):
+    __tablename__ = "message_errors"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["chat_id", "message_id"],
+            ["messages.chat_id", "messages.message_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    error_type: Mapped[int] = mapped_column(
+        ForeignKey("message_error_types.error_type"), primary_key=True
+    )
 
 
 class UserChatBindingModel(Base):

@@ -185,6 +185,7 @@ async def save_message(message: Message) -> None:
             chat_id=message.chat.id,
             message_id=message.message_id,
             text_short=(text or "")[0:100],
+            text_full=text or "",
             text_full_hash=_hash_message(text),
             image_hash=await _hash_message_photo(message),
             media_group_id=_get_media_group_id(message),
@@ -218,4 +219,3 @@ async def store_all_messages(message: Message):
 )
 async def update_edited_message(message: Message):
     await save_message(message)
-

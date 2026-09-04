@@ -54,7 +54,6 @@ class ReaderSettings(BaseSettings):
     phone: str = Field(..., alias="PHONE")
     session_name: str = Field("src/method/tg_session", alias="TELETHON_SESSION_NAME")
     target: str = Field(..., alias="TELETHON_TARGET")
-    limit: int = Field(5000, alias="TELETHON_LIMIT")
 
     @property
     def session_path(self) -> Path:
@@ -82,16 +81,30 @@ class AccessSettings(BaseSettings):
     read_all_messages: bool = Field(False, alias="READ_ALL_MESSAGES")
 
 
+class OpenAISettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    api_key: str | None = Field(None, alias="OPENAI_API_KEY")
+    model: str = Field("gpt-5-mini", alias="OPENAI_MODEL")
+    process_message: int = Field(500, alias="PROCESS_MESSAGE", ge=1)
+
+
 class Settings:
     token: Token
     db: DB
     access: AccessSettings
+    openai: OpenAISettings
     _reader: ReaderSettings | None
 
     def __init__(self):
         self.token = Token()
         self.db = DB()
         self.access = AccessSettings()
+        self.openai = OpenAISettings()
         self._reader = None
 
     @property

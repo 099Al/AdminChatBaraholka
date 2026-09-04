@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from sqlalchemy import case, func, select, delete, and_, or_, update
@@ -11,6 +12,8 @@ from src.database.connect import db
 from src.database.models.model_clean import (
     AdminModel,
     BlockTypeModel,
+    MessageErrorModel,
+    MessageFullTextModel,
     MessageModel,
     UserBannedModel,
     UserChatBindingModel,
@@ -28,12 +31,139 @@ class RepoClean:
             res = await session.execute(stmt)
             return [(int(chat_id), int(message_id)) for chat_id, message_id in res.all()]
 
+    async def get_unclassified_messages(self, limit: int) -> list[dict[str, object]]:
+        stmt = (
+            select(
+                MessageModel.chat_id,
+                MessageModel.message_id,
+                MessageModel.media_group_id,
+                MessageFullTextModel.full_text,
+                MessageModel.reply_to_message_id,
+                MessageModel.image_hash,
+            )
+            .join(
+                MessageFullTextModel,
+                and_(
+                    MessageFullTextModel.chat_id == MessageModel.chat_id,
+                    MessageFullTextModel.message_id == MessageModel.message_id,
+                ),
+            )
+            .where(MessageModel.message_type.is_(None))
+            .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
+            .limit(limit)
+        )
+        async with db.session() as session:
+            rows = (await session.execute(stmt)).all()
+            return [
+                {
+                    "chat_id": int(chat_id),
+                    "message_id": int(message_id),
+                    "media_group_id": media_group_id,
+                    "text_full": str(full_text or ""),
+                    "reply_message_id": reply_to_message_id,
+                    "has_image": image_hash is not None,
+                    "image_hash": image_hash,
+                }
+                for (
+                    chat_id,
+                    message_id,
+                    media_group_id,
+                    full_text,
+                    reply_to_message_id,
+                    image_hash,
+                ) in rows
+            ]
+
+    async def save_message_classifications(
+        self,
+        classifications: list[
+            tuple[int, int, str, str | None, str | None, int | None, int, list[int]]
+        ],
+    ) -> None:
+        async with db.session() as session:
+            for (
+                chat_id,
+                message_id,
+                expected_text,
+                expected_image_hash,
+                expected_media_group_id,
+                expected_reply_id,
+                message_type,
+                error_codes,
+            ) in classifications:
+                current_stmt = (
+                    select(
+                        MessageFullTextModel.full_text,
+                        MessageModel.image_hash,
+                        MessageModel.media_group_id,
+                        MessageModel.reply_to_message_id,
+                    )
+                    .join(
+                        MessageFullTextModel,
+                        and_(
+                            MessageFullTextModel.chat_id == MessageModel.chat_id,
+                            MessageFullTextModel.message_id == MessageModel.message_id,
+                        ),
+                    )
+                    .where(
+                        MessageModel.chat_id == chat_id,
+                        MessageModel.message_id == message_id,
+                        MessageModel.message_type.is_(None),
+                    )
+                )
+                current = (await session.execute(current_stmt)).first()
+                expected_fingerprint = (
+                    expected_text,
+                    expected_image_hash,
+                    expected_media_group_id,
+                    expected_reply_id,
+                )
+                if current is None or tuple(current) != expected_fingerprint:
+                    continue
+
+                normalized_errors = sorted(set(error_codes))
+                update_result = await session.execute(
+                    update(MessageModel)
+                    .where(
+                        MessageModel.chat_id == chat_id,
+                        MessageModel.message_id == message_id,
+                        MessageModel.message_type.is_(None),
+                    )
+                    .values(
+                        message_type=message_type,
+                        errors=json.dumps(normalized_errors, ensure_ascii=False),
+                    )
+                )
+                if update_result.rowcount != 1:
+                    continue
+                await session.execute(
+                    delete(MessageErrorModel).where(
+                        MessageErrorModel.chat_id == chat_id,
+                        MessageErrorModel.message_id == message_id,
+                    )
+                )
+                if normalized_errors:
+                    await session.execute(
+                        insert(MessageErrorModel).values(
+                            [
+                                {
+                                    "chat_id": chat_id,
+                                    "message_id": message_id,
+                                    "error_type": error_code,
+                                }
+                                for error_code in normalized_errors
+                            ]
+                        )
+                    )
+            await session.commit()
+
     async def upsert_message(
         self,
         *,
         chat_id: int,
         message_id: int,
         text_short: str,
+        text_full: str,
         text_full_hash: str | None,
         image_hash: str | None,
         media_group_id: str | None,
@@ -47,25 +177,30 @@ class RepoClean:
         username: str | None = None,
         full_name: str | None = None,
     ) -> None:
-        stmt = insert(MessageModel).values(
-            chat_id=chat_id,
-            message_id=message_id,
-            text_short=text_short,
-            text_full_hash=text_full_hash,
-            image_hash=image_hash,
-            media_group_id=media_group_id,
-            reply_to_message_id=reply_to_message_id,
-            original_user_id=original_user_id,
-            original_author=original_author,
-            created_at=created_at,
-            date_ts=date_ts,
-            has_keywords=has_keywords,
-            user_id=user_id,
-            username=username,
-            full_name=full_name,
-        ).on_conflict_do_update(
-            index_elements=[MessageModel.chat_id, MessageModel.message_id],
-            set_=dict(
+        async with db.session() as session:
+            current_stmt = select(
+                MessageModel.text_full_hash,
+                MessageModel.image_hash,
+                MessageModel.media_group_id,
+                MessageModel.reply_to_message_id,
+                MessageFullTextModel.full_text,
+            ).outerjoin(
+                MessageFullTextModel,
+                and_(
+                    MessageFullTextModel.chat_id == MessageModel.chat_id,
+                    MessageFullTextModel.message_id == MessageModel.message_id,
+                ),
+            ).where(
+                MessageModel.chat_id == chat_id,
+                MessageModel.message_id == message_id,
+            )
+            current = (await session.execute(current_stmt)).first()
+            fingerprint = (text_full_hash, image_hash, media_group_id, reply_to_message_id, text_full)
+            changed = current is not None and tuple(current) != fingerprint
+
+            stmt = insert(MessageModel).values(
+                chat_id=chat_id,
+                message_id=message_id,
                 text_short=text_short,
                 text_full_hash=text_full_hash,
                 image_hash=image_hash,
@@ -79,11 +214,45 @@ class RepoClean:
                 user_id=user_id,
                 username=username,
                 full_name=full_name,
-            ),
-        )
-
-        async with db.session() as session:
+            ).on_conflict_do_update(
+                index_elements=[MessageModel.chat_id, MessageModel.message_id],
+                set_=dict(
+                    text_short=text_short,
+                    text_full_hash=text_full_hash,
+                    image_hash=image_hash,
+                    media_group_id=media_group_id,
+                    reply_to_message_id=reply_to_message_id,
+                    original_user_id=original_user_id,
+                    original_author=original_author,
+                    created_at=created_at,
+                    date_ts=date_ts,
+                    has_keywords=has_keywords,
+                    user_id=user_id,
+                    username=username,
+                    full_name=full_name,
+                    **({"message_type": None, "errors": None} if changed else {}),
+                ),
+            )
             await session.execute(stmt)
+
+            full_text_stmt = insert(MessageFullTextModel).values(
+                chat_id=chat_id,
+                message_id=message_id,
+                full_text=text_full,
+            ).on_conflict_do_update(
+                index_elements=[MessageFullTextModel.chat_id, MessageFullTextModel.message_id],
+                set_=dict(full_text=text_full),
+            )
+            await session.execute(full_text_stmt)
+
+            if changed:
+                await session.execute(
+                    delete(MessageErrorModel).where(
+                        MessageErrorModel.chat_id == chat_id,
+                        MessageErrorModel.message_id == message_id,
+                    )
+                )
+
             await session.commit()
 
     async def get_message_ids_without_keywords_since(self, chat_id: int, since_ts: int) -> list[int]:
@@ -140,13 +309,44 @@ class RepoClean:
             return [row[0] for row in res.all()]
 
     async def delete_record(self, chat_id: int, message_id: int) -> None:
-        stmt = delete(MessageModel).where(
+        async with db.session() as session:
+            await session.execute(
+                delete(MessageErrorModel).where(
+                    MessageErrorModel.chat_id == chat_id,
+                    MessageErrorModel.message_id == message_id,
+                )
+            )
+            await session.execute(
+                delete(MessageFullTextModel).where(
+                    MessageFullTextModel.chat_id == chat_id,
+                    MessageFullTextModel.message_id == message_id,
+                )
+            )
+            await session.execute(
+                delete(MessageModel).where(
+                    MessageModel.chat_id == chat_id,
+                    MessageModel.message_id == message_id,
+                )
+            )
+            await session.commit()
+
+    async def delete_messages_missing_from_snapshot(
+        self,
+        chat_id: int,
+        seen_message_ids: set[int],
+        since_ts: int,
+    ) -> int:
+        stmt = select(MessageModel.message_id).where(
             MessageModel.chat_id == chat_id,
-            MessageModel.message_id == message_id,
+            MessageModel.date_ts >= since_ts,
         )
         async with db.session() as session:
-            await session.execute(stmt)
-            await session.commit()
+            rows = await session.execute(stmt)
+            missing_ids = [int(row[0]) for row in rows.all() if int(row[0]) not in seen_message_ids]
+
+        for message_id in missing_ids:
+            await self.delete_record(chat_id, message_id)
+        return len(missing_ids)
 
     async def set_user_active_chat(self, user_id: int, chat_id: int) -> None:
         stmt = insert(UserChatBindingModel).values(

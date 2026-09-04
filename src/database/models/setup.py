@@ -26,6 +26,40 @@ async def init_db() -> None:
                 "WHERE block_type = 1"
             )
         )
+
+        message_types = (
+            (1, "advertisement", "Объявление о продаже или передаче"),
+            (2, "clarification", "Уточнение или ответ на объявление"),
+            (3, "wanted", "Покупка, поиск или просьба отдать даром"),
+            (4, "off_topic", "Флуд или общение не по теме доски объявлений"),
+        )
+        for type_id, name, description in message_types:
+            await conn.execute(
+                text(
+                    "INSERT INTO message_types (message_type, name, description) "
+                    "VALUES (:id, :name, :description) "
+                    "ON CONFLICT(message_type) DO UPDATE SET "
+                    "name = excluded.name, description = excluded.description"
+                ),
+                {"id": type_id, "name": name, "description": description},
+            )
+
+        error_types = (
+            (1, "missing_address", "Не указан адрес (адрес может быть ссылкой на карту)"),
+            (2, "missing_price", "Не указана стоимость и не сказано, что товар отдаётся бесплатно"),
+            (3, "missing_image", "Нет картинки в объявлении"),
+            (4, "flood", "Флуд"),
+        )
+        for type_id, name, description in error_types:
+            await conn.execute(
+                text(
+                    "INSERT INTO message_error_types (error_type, name, description) "
+                    "VALUES (:id, :name, :description) "
+                    "ON CONFLICT(error_type) DO UPDATE SET "
+                    "name = excluded.name, description = excluded.description"
+                ),
+                {"id": type_id, "name": name, "description": description},
+            )
         await conn.execute(
             text(
                 "UPDATE block_types "
@@ -135,3 +169,16 @@ async def init_db() -> None:
         if message_columns and "is_repeated" not in message_columns:
             await conn.execute(text("ALTER TABLE messages ADD COLUMN is_repeated INTEGER DEFAULT 0"))
             await conn.execute(text("UPDATE messages SET is_repeated = 0 WHERE is_repeated IS NULL"))
+
+        if message_columns and "message_type" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN message_type INTEGER"))
+
+        if message_columns and "errors" not in message_columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN errors TEXT"))
+
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO message_full_texts (chat_id, message_id, full_text) "
+                "SELECT chat_id, message_id, COALESCE(text_short, '') FROM messages"
+            )
+        )
