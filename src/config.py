@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -91,6 +92,12 @@ class OpenAISettings(BaseSettings):
     api_key: str | None = Field(None, alias="OPENAI_API_KEY")
     model: str = Field("gpt-5-mini", alias="OPENAI_MODEL")
     process_message: int = Field(500, alias="PROCESS_MESSAGE", ge=1)
+    classification_enabled: bool = Field(True, alias="ENABLE_MESSAGE_CLASSIFICATION")
+    classification_backend: Literal["local", "ollama", "openai"] = Field(
+        "openai", alias="MESSAGE_CLASSIFICATION_BACKEND"
+    )
+    ollama_host: str = Field("http://localhost:11434", alias="OLLAMA_HOST")
+    ollama_model: str = Field("qwen3:4b", alias="OLLAMA_MODEL")
 
 
 class Settings:

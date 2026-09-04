@@ -72,6 +72,10 @@ ENV=DEV
 MAIN_ADMIN_USER=123456789
 MESSAGE_RETENTION_DAYS=7
 PROCESS_MESSAGE=500
+ENABLE_MESSAGE_CLASSIFICATION=true
+MESSAGE_CLASSIFICATION_BACKEND=local
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=qwen3:4b
 OPENAI_API_KEY=sk-your-openai-api-key
 OPENAI_MODEL=gpt-5-mini
 ```
@@ -224,7 +228,55 @@ uv run python -m src.cleanup_old_messages
 сбрасывается. Классификацию можно запустить отдельно:
 
 ```bash
-uv run python -m src.classify_messages
+uv run python -m src.classifiers.openai_classifier
+```
+
+Чтобы быстро отключить автоматическую проверку при запуске основного бота:
+
+```env
+ENABLE_MESSAGE_CLASSIFICATION=false
+```
+
+Это не отключает отдельную команду
+`python -m src.classifiers.openai_classifier`.
+
+Для локальной классификации без OpenAI API укажите:
+
+```env
+ENABLE_MESSAGE_CLASSIFICATION=true
+MESSAGE_CLASSIFICATION_BACKEND=local
+```
+
+Доступные значения `MESSAGE_CLASSIFICATION_BACKEND`:
+
+- `local` — регулярные выражения, без сети и расходов на API;
+- `ollama` — локальная модель Ollama;
+- `openai` — классификация моделью OpenAI.
+
+Локальную проверку также можно запустить отдельно:
+
+```bash
+uv run python -m src.classifiers.local_classifier
+```
+
+Для классификации через Qwen3:4B установите Ollama, загрузите модель и выберите
+backend:
+
+```bash
+ollama pull qwen3:4b
+```
+
+```env
+ENABLE_MESSAGE_CLASSIFICATION=true
+MESSAGE_CLASSIFICATION_BACKEND=ollama
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=qwen3:4b
+```
+
+Отдельный запуск:
+
+```bash
+uv run python -m src.classifiers.ollama_classifier
 ```
 
 Перед запуском нужно создать `.env` с `BOT_TOKEN`.
