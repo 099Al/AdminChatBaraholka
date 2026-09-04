@@ -1,6 +1,6 @@
 from aiogram import Router
 
-from src.handlers.start_buttons.button_1_cleanup_week import router as button_1_router
+from src.handlers.start_buttons.button_1_find_invalid_messages import router as button_1_router
 from src.handlers.start_buttons.button_2_delete_repeats import router as button_2_router
 from src.handlers.start_buttons.button_3_check_delete import router as button_3_router
 from src.handlers.start_buttons.button_4_block_users import router as button_4_router

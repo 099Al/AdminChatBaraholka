@@ -31,7 +31,11 @@ class RepoClean:
             res = await session.execute(stmt)
             return [(int(chat_id), int(message_id)) for chat_id, message_id in res.all()]
 
-    async def get_unclassified_messages(self, limit: int) -> list[dict[str, object]]:
+    async def get_unclassified_messages(
+        self,
+        limit: int,
+        chat_id: int | None = None,
+    ) -> list[dict[str, object]]:
         stmt = (
             select(
                 MessageModel.chat_id,
@@ -48,7 +52,10 @@ class RepoClean:
                     MessageFullTextModel.message_id == MessageModel.message_id,
                 ),
             )
-            .where(MessageModel.message_type.is_(None))
+            .where(
+                MessageModel.message_type.is_(None),
+                MessageModel.chat_id == chat_id if chat_id is not None else True,
+            )
             .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
             .limit(limit)
         )
@@ -72,6 +79,41 @@ class RepoClean:
                     reply_to_message_id,
                     image_hash,
                 ) in rows
+            ]
+
+    async def get_noncompliant_messages(
+        self,
+        chat_id: int,
+        limit: int = 50,
+    ) -> tuple[int, list[tuple[int, int, list[int], str]]]:
+        condition = or_(
+            MessageModel.message_type == 4,
+            and_(MessageModel.errors.is_not(None), MessageModel.errors != "[]"),
+        )
+        base_condition = and_(MessageModel.chat_id == chat_id, condition)
+        rows_stmt = (
+            select(
+                MessageModel.message_id,
+                MessageModel.message_type,
+                MessageModel.errors,
+                MessageModel.text_short,
+            )
+            .where(base_condition)
+            .order_by(MessageModel.date_ts.desc(), MessageModel.message_id.desc())
+            .limit(limit)
+        )
+        count_stmt = select(func.count()).select_from(MessageModel).where(base_condition)
+        async with db.session() as session:
+            total = int((await session.execute(count_stmt)).scalar_one())
+            rows = (await session.execute(rows_stmt)).all()
+            return total, [
+                (
+                    int(message_id),
+                    int(message_type),
+                    [int(code) for code in json.loads(errors or "[]")],
+                    str(text_short or ""),
+                )
+                for message_id, message_type, errors, text_short in rows
             ]
 
     async def save_message_classifications(

@@ -25,29 +25,12 @@ async def main():
 
     await cleanup_old_messages(bot)
     if settings.openai.classification_enabled:
-        if settings.openai.classification_backend == "local":
-            from src.classifiers.local_classifier import classify_pending_messages_locally
+        from src.classifiers.service import ClassificationBackendError, classify_pending_messages
 
-            await classify_pending_messages_locally()
-        elif settings.openai.classification_backend == "ollama":
-            from src.classifiers.ollama_classifier import (
-                OllamaClassificationError,
-                classify_pending_messages_with_ollama,
-            )
-
-            try:
-                await classify_pending_messages_with_ollama()
-            except OllamaClassificationError as error:
-                print(f"Ollama classification failed; bot startup continues: {error}")
-        else:
-            from openai import OpenAIError
-
-            from src.classifiers.openai_classifier import classify_pending_messages
-
-            try:
-                await classify_pending_messages()
-            except OpenAIError as error:
-                print(f"Message classification failed; bot startup continues: {error}")
+        try:
+            await classify_pending_messages()
+        except ClassificationBackendError as error:
+            print(f"Message classification failed; bot startup continues: {error}")
 
     dp = Dispatcher()
 
