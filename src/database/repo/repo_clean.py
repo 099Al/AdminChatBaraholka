@@ -18,6 +18,16 @@ from src.database.models.model_clean import (
 
 
 class RepoClean:
+    async def get_messages_older_than(self, before_ts: int) -> list[tuple[int, int]]:
+        stmt = (
+            select(MessageModel.chat_id, MessageModel.message_id)
+            .where(MessageModel.date_ts < before_ts)
+            .order_by(MessageModel.chat_id, MessageModel.date_ts, MessageModel.message_id)
+        )
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return [(int(chat_id), int(message_id)) for chat_id, message_id in res.all()]
+
     async def upsert_message(
         self,
         *,

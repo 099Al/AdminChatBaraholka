@@ -66,6 +66,7 @@ URL базы можно переопределить переменной окр
 BOT_TOKEN=telegram_bot_token
 ENV=DEV
 MAIN_ADMIN_USER=123456789
+MESSAGE_RETENTION_DAYS=7
 ```
 
 Опционально:
@@ -201,6 +202,13 @@ MAIN_ADMIN_USER=123456789
 ```bash
 uv sync
 uv run python -m src.run
+```
+
+При запуске бот удаляет из Telegram и таблицы `messages` сообщения старше
+`MESSAGE_RETENTION_DAYS`. Очистку можно запустить отдельно:
+
+```bash
+uv run python -m src.cleanup_old_messages
 ```
 
 Перед запуском нужно создать `.env` с `BOT_TOKEN`.

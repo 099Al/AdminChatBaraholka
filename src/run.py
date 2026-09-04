@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher
 
 from src.config import settings
 
+from src.cleanup_old_messages import cleanup_old_messages
 from src.database.connect import db
 from src.database.models.setup import init_db
 from src.first_messages_reader import read_all_messages
@@ -21,6 +22,8 @@ async def main():
 
     if settings.access.read_all_messages:
         await read_all_messages(init_database=False, dispose_db=False)
+
+    await cleanup_old_messages(bot)
 
     dp = Dispatcher()
 
