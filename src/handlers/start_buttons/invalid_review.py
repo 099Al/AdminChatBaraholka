@@ -18,8 +18,9 @@ from src.database.repo.repo_clean import repo_clean
 router = Router()
 
 FORMAT_NOTICE = (
+    "Ваше объявление не по формату / не по правилам. "
     "Объявление должно содержать цену, адрес и фото по возможности. "
-    "Пожалуйста, исправьте объявление."
+    "Пожалуйста, исправьте его и опубликуйте заново."
 )
 
 
@@ -112,7 +113,16 @@ async def _notify_author(callback: CallbackQuery, chat_id: int, message_id: int)
     user_id = author[0] if author else None
     if user_id is not None:
         try:
-            await callback.bot.send_message(user_id, FORMAT_NOTICE)
+            copied_message = await callback.bot.copy_message(
+                chat_id=user_id,
+                from_chat_id=chat_id,
+                message_id=message_id,
+            )
+            await callback.bot.send_message(
+                user_id,
+                FORMAT_NOTICE,
+                reply_parameters=ReplyParameters(message_id=copied_message.message_id),
+            )
         except (TelegramBadRequest, TelegramForbiddenError):
             await callback.bot.send_message(
                 chat_id,
