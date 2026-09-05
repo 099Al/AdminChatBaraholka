@@ -8,6 +8,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import aliased
 
 from src.constants import UTC_PLUS_5, ADMINS
+from src.config import settings
 from src.database.connect import db
 from src.database.models.model_clean import (
     AdminModel,
@@ -124,6 +125,171 @@ class RepoClean:
                 )
                 for message_id, message_type, errors, text_short, user_id, media_group_id in rows
             ]
+
+    async def get_format_notice_recipients(
+        self,
+        chat_id: int,
+        *,
+        sent_before: str,
+        limit: int = 500,
+    ) -> list[tuple[int, str | None, str | None]]:
+        stmt = (
+            select(
+                MessageModel.user_id,
+                MessageModel.username,
+                MessageModel.full_name,
+                MessageModel.message_type,
+                MessageModel.errors,
+                UserBannedModel.format_notice_sent_at,
+            )
+            .outerjoin(UserBannedModel, UserBannedModel.user_id == MessageModel.user_id)
+            .where(
+                MessageModel.chat_id == chat_id,
+                MessageModel.approved == 0,
+                MessageModel.user_id.is_not(None),
+                ~MessageModel.user_id.in_(ADMINS),
+                MessageModel.errors.is_not(None),
+                MessageModel.errors != "[]",
+                or_(
+                    UserBannedModel.user_id.is_(None),
+                    UserBannedModel.block_type.is_(None),
+                ),
+                or_(
+                    UserBannedModel.format_notice_sent_at.is_(None),
+                    UserBannedModel.format_notice_sent_at == "",
+                    UserBannedModel.format_notice_sent_at <= sent_before,
+                ),
+            )
+            .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
+            .limit(limit)
+        )
+        recipients: dict[int, tuple[str | None, str | None]] = {}
+
+        async with db.session() as session:
+            rows = (await session.execute(stmt)).all()
+
+        for user_id, username, full_name, message_type, errors, _ in rows:
+            if user_id is None or message_type == 4:
+                continue
+            try:
+                error_codes = [int(code) for code in json.loads(errors or "[]")]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if not error_codes or 4 in error_codes:
+                continue
+            recipients.setdefault(int(user_id), (username, full_name))
+
+        return [(user_id, username, full_name) for user_id, (username, full_name) in recipients.items()]
+
+    async def mark_format_notice_sent(
+        self,
+        user_id: int,
+        *,
+        sent_at: str,
+        username: str | None = None,
+        full_name: str | None = None,
+    ) -> None:
+        stmt = insert(UserBannedModel).values(
+            user_id=user_id,
+            created_at="",
+            format_notice_sent_at=sent_at,
+            username=username,
+            full_name=full_name,
+        ).on_conflict_do_update(
+            index_elements=[UserBannedModel.user_id],
+            set_=dict(
+                format_notice_sent_at=sent_at,
+                username=username,
+                full_name=full_name,
+            ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def add_notice_failed_banned_user(
+        self,
+        user_id: int,
+        username: str | None = None,
+        full_name: str | None = None,
+    ) -> None:
+        now = datetime.now(UTC_PLUS_5).strftime("%Y-%m-%d %H:%M:%S")
+        block_type = case(
+            (UserBannedModel.block_type == 2, 2),
+            (UserBannedModel.block_type == 3, 3),
+            (UserBannedModel.block_type == 1, 1),
+            else_=4,
+        )
+        stmt = insert(UserBannedModel).values(
+            user_id=user_id,
+            created_at=now,
+            blocked_until=None,
+            block_type=4,
+            username=username,
+            full_name=full_name,
+        ).on_conflict_do_update(
+            index_elements=[UserBannedModel.user_id],
+            set_=dict(
+                created_at=now,
+                blocked_until=None,
+                block_type=block_type,
+                username=username,
+                full_name=full_name,
+            ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def get_invalid_messages_to_delete(
+        self,
+        chat_id: int,
+        *,
+        stale_before_ts: int,
+        limit: int = 1000,
+    ) -> list[tuple[int, int | None, str | None, str | None, str]]:
+        stmt = (
+            select(
+                MessageModel.message_id,
+                MessageModel.user_id,
+                MessageModel.username,
+                MessageModel.full_name,
+                MessageModel.message_type,
+                MessageModel.errors,
+                MessageModel.date_ts,
+            )
+            .where(
+                MessageModel.chat_id == chat_id,
+                MessageModel.approved == 0,
+                or_(
+                    MessageModel.message_type == 4,
+                    and_(MessageModel.errors.is_not(None), MessageModel.errors != "[]"),
+                ),
+            )
+            .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
+            .limit(limit)
+        )
+
+        async with db.session() as session:
+            rows = (await session.execute(stmt)).all()
+
+        messages: list[tuple[int, int | None, str | None, str | None, str]] = []
+        for message_id, user_id, username, full_name, message_type, errors, date_ts in rows:
+            try:
+                error_codes = [int(code) for code in json.loads(errors or "[]")]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                error_codes = []
+
+            is_flood = message_type == 4 or 4 in error_codes
+            is_stale_format_error = bool(error_codes) and not is_flood and int(date_ts) <= stale_before_ts
+            if is_flood:
+                messages.append((int(message_id), user_id, username, full_name, "flood"))
+            elif is_stale_format_error:
+                messages.append((int(message_id), user_id, username, full_name, "invalid_ad"))
+
+        return messages
 
     async def save_message_classifications(
         self,
@@ -428,27 +594,64 @@ class RepoClean:
                 )
             await session.commit()
 
-    async def increment_message_violation(self, user_id: int, violation: str) -> None:
+    async def increment_message_violation(self, user_id: int, violation: str) -> int:
+        now = datetime.now(UTC_PLUS_5).strftime("%Y-%m-%d %H:%M:%S")
         if violation == "invalid_ad":
             column = UserBannedModel.invalid_ads_count
             values = {"invalid_ads_count": 1}
+            update_values = {column.key: func.coalesce(column, 0) + 1}
         elif violation == "flood":
             column = UserBannedModel.flood_count
             values = {"flood_count": 1}
+            flood_count = func.coalesce(column, 0) + 1
+            update_values = {
+                column.key: flood_count,
+                UserBannedModel.created_at.key: case(
+                    (flood_count >= settings.access.flood_messages_limit, now),
+                    else_=UserBannedModel.created_at,
+                ),
+                UserBannedModel.blocked_until.key: case(
+                    (flood_count >= settings.access.flood_messages_limit, None),
+                    else_=UserBannedModel.blocked_until,
+                ),
+                UserBannedModel.block_type.key: case(
+                    (
+                        and_(
+                            flood_count >= settings.access.flood_messages_limit,
+                            UserBannedModel.block_type == 2,
+                        ),
+                        2,
+                    ),
+                    (flood_count >= settings.access.flood_messages_limit, 3),
+                    else_=UserBannedModel.block_type,
+                ),
+            }
         else:
             raise ValueError(f"Unknown violation type: {violation}")
 
         stmt = insert(UserBannedModel).values(
             user_id=user_id,
-            created_at="",
+            created_at=now if violation == "flood" and settings.access.flood_messages_limit <= 1 else "",
+            block_type=3 if violation == "flood" and settings.access.flood_messages_limit <= 1 else None,
             **values,
         ).on_conflict_do_update(
             index_elements=[UserBannedModel.user_id],
-            set_={column.key: func.coalesce(column, 0) + 1},
+            set_=update_values,
         )
         async with db.session() as session:
             await session.execute(stmt)
             await session.commit()
+            if violation == "flood":
+                res = await session.execute(
+                    select(UserBannedModel.flood_count).where(UserBannedModel.user_id == user_id)
+                )
+                return int(res.scalar_one_or_none() or 0)
+            if violation == "invalid_ad":
+                res = await session.execute(
+                    select(UserBannedModel.invalid_ads_count).where(UserBannedModel.user_id == user_id)
+                )
+                return int(res.scalar_one_or_none() or 0)
+            return 0
 
     async def set_user_active_chat(self, user_id: int, chat_id: int) -> None:
         stmt = insert(UserChatBindingModel).values(
@@ -788,6 +991,7 @@ class RepoClean:
         created_at = now.strftime("%Y-%m-%d %H:%M:%S")
         block_type = case(
             (UserBannedModel.block_type == 2, 2),
+            (UserBannedModel.block_type == 3, 3),
             else_=1,
         )
         stmt = insert(UserBannedModel).values(
@@ -818,6 +1022,13 @@ class RepoClean:
     async def get_banned_users(
         self,
     ) -> list[tuple[int, str | None, str | None, str | None, str | None, int, int | None, int, int]]:
+        block_priority = case(
+            (UserBannedModel.block_type == 2, 4),
+            (UserBannedModel.block_type == 3, 3),
+            (UserBannedModel.block_type == 1, 2),
+            (UserBannedModel.block_type == 4, 1),
+            else_=0,
+        )
         stmt = (
             select(
                 UserBannedModel.user_id,
@@ -842,8 +1053,9 @@ class RepoClean:
                 )
             )
             .order_by(
-                UserBannedModel.block_type.desc(),
+                block_priority.desc(),
                 UserBannedModel.block_repeat_cnt.desc(),
+                UserBannedModel.flood_count.desc(),
                 UserBannedModel.block_limit.desc(),
                 UserBannedModel.user_id.asc(),
             )

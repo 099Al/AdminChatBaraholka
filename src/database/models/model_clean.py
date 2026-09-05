@@ -118,6 +118,7 @@ class UserBannedModel(Base):
     block_limit: Mapped[int] = mapped_column(Integer, default=0)
     invalid_ads_count: Mapped[int] = mapped_column(Integer, default=0)
     flood_count: Mapped[int] = mapped_column(Integer, default=0)
+    format_notice_sent_at: Mapped[str | None] = mapped_column(Text, nullable=True)
     block_type: Mapped[int | None] = mapped_column(Integer, nullable=True)
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)

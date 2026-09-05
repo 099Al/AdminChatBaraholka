@@ -67,6 +67,32 @@ async def init_db() -> None:
                 "WHERE block_type = 2"
             )
         )
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO block_types (block_type, name, description) "
+                "VALUES (3, 'flood', 'Флуд')"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE block_types "
+                "SET name = 'flood', description = 'Флуд' "
+                "WHERE block_type = 3"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO block_types (block_type, name, description) "
+                "VALUES (4, 'notice_failed', 'Не удалось отправить уведомление')"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE block_types "
+                "SET name = 'notice_failed', description = 'Не удалось отправить уведомление' "
+                "WHERE block_type = 4"
+            )
+        )
 
         result = await conn.execute(text("PRAGMA table_info(admins)"))
         columns = {row[1] for row in result.fetchall()}
@@ -144,6 +170,9 @@ async def init_db() -> None:
         if user_banned_columns and "flood_count" not in user_banned_columns:
             await conn.execute(text("ALTER TABLE user_banned ADD COLUMN flood_count INTEGER DEFAULT 0"))
             await conn.execute(text("UPDATE user_banned SET flood_count = 0 WHERE flood_count IS NULL"))
+
+        if user_banned_columns and "format_notice_sent_at" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN format_notice_sent_at TEXT"))
 
         result = await conn.execute(text("PRAGMA table_info(messages)"))
         message_columns = {row[1] for row in result.fetchall()}
