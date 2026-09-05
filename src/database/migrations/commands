@@ -1,0 +1,12 @@
+
+> alembic revision -m first --autogenerate
+
+
+
+>uv add pyncclient --index-url=https://package-cache-pypi.query.consul-tech/repository/pypi-public/simple --native-tls
+
+>alembic revision  --autogenerate  -m first
+>alembic upgrade head
+
+>alembic upgrade head --sql > migration.sql
+
