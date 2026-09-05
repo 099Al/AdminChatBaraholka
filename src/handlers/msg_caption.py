@@ -16,6 +16,7 @@ from src.handlers.buttons_txt import (
     button_5_txt,
     button_6_txt,
     button_7_txt,
+    button_8_txt,
 )
 
 caption_router = Router()
@@ -29,6 +30,7 @@ BUTTON_TEXTS = {
     button_5_txt,
     button_6_txt,
     button_7_txt,
+    button_8_txt,
 }
 
 

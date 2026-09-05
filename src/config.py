@@ -74,6 +74,7 @@ class AccessSettings(BaseSettings):
 
     main_admin_user: int = Field(..., alias="MAIN_ADMIN_USER")
     limit_messages: int = Field(5, alias="LIMIT_MESSAGES")
+    flood_messages_limit: int = Field(10, alias="FLOOD_MESSAGES_LIMIT")
     blocked_after_limit_days: int = Field(1, alias="BLOCKED_AFTER_LIMIT_DAYS")
     blocked_after_repeat_days: int = Field(7, alias="BLOCKED_AFTER_REPEAT_DAYS")
     repeat_period: int = Field(7, alias="REPEAT_PERIOD")

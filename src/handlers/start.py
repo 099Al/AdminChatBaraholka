@@ -14,6 +14,7 @@ from src.handlers.buttons_txt import (
     button_5_txt,
     button_6_txt,
     button_7_txt,
+    button_8_txt,
 )
 from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate, _is_main_admin
 
@@ -44,7 +45,8 @@ async def start_handler(message: Message):
     kb.button(text=button_5_txt)
     kb.button(text=button_6_txt)
     kb.button(text=button_7_txt)
-    kb.adjust(1, 2, 2, 2)
+    kb.button(text=button_8_txt)
+    kb.adjust(1, 2, 2, 2, 1)
 
     await message.answer(
             "Выберите действие:",

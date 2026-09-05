@@ -7,6 +7,7 @@ from src.handlers.start_buttons.button_4_block_users import router as button_4_r
 from src.handlers.start_buttons.button_5_send_format_notices import router as send_format_notices_router
 from src.handlers.start_buttons.button_5_delete_limit import router as delete_limit_router
 from src.handlers.start_buttons.button_6_delete_marked_repeats import router as button_6_router
+from src.handlers.start_buttons.button_7_delete_invalid_messages import router as button_7_router
 from src.handlers.start_buttons.invalid_review import router as invalid_review_router
 
 start_buttons_router = Router()
@@ -17,4 +18,5 @@ start_buttons_router.include_router(button_4_router)
 start_buttons_router.include_router(send_format_notices_router)
 start_buttons_router.include_router(delete_limit_router)
 start_buttons_router.include_router(button_6_router)
+start_buttons_router.include_router(button_7_router)
 start_buttons_router.include_router(invalid_review_router)
