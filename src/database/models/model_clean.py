@@ -99,6 +99,16 @@ class AdminModel(Base):
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ScheduledTaskRunModel(Base):
+    __tablename__ = "scheduled_task_runs"
+
+    task_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    title: Mapped[str] = mapped_column(Text)
+    last_run_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_run_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class BlockTypeModel(Base):
     __tablename__ = "block_types"
 

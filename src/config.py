@@ -82,6 +82,9 @@ class AccessSettings(BaseSettings):
     message_retention_days: int = Field(7, alias="MESSAGE_RETENTION_DAYS", ge=1)
     forward_repeated_messages: bool = Field(False, alias="FORWARD_REPEATED_MESSAGES")
     read_all_messages: bool = Field(False, alias="READ_ALL_MESSAGES")
+    scheduled_run_interval_hours: int = Field(3, alias="SCHEDULED_RUN_INTERVAL_HOURS", ge=1)
+    scheduled_group_chat_id: int | None = Field(None, alias="SCHEDULED_GROUP_CHAT_ID")
+    scheduled_notify_chat_id: int | None = Field(None, alias="SCHEDULED_NOTIFY_CHAT_ID")
 
 
 class OpenAISettings(BaseSettings):

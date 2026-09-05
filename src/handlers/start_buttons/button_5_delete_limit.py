@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import Message
 
@@ -29,12 +29,16 @@ async def delete_limit_messages(message: Message):
         await message.answer("Сначала в нужной группе напиши /bind")
         return
 
+    answer = await run_delete_limit_messages(message.bot, group_chat_id=group_chat_id)
+    await message.answer(answer)
+
+
+async def run_delete_limit_messages(bot: Bot, *, group_chat_id: int) -> str:
     now = datetime.now(UTC_PLUS_5)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     rows = await repo_clean.get_messages_for_limit_since(group_chat_id, int(day_start.timestamp()))
     if not rows:
-        await message.answer("За сегодня нет сохранённых сообщений в БД.")
-        return
+        return "За сегодня нет сохранённых сообщений в БД."
 
     limit_messages = settings.access.limit_messages
     grouped_rows: dict[
@@ -74,23 +78,21 @@ async def delete_limit_messages(message: Message):
         limit_users.setdefault(sender_user_id, (username, full_name))
 
     if not to_delete:
-        await message.answer(f"Перелимита за сегодня нет. Лимит: {limit_messages}")
-        return
+        return f"Перелимита за сегодня нет. Лимит: {limit_messages}"
 
     deleted = 0
     skipped = 0
 
     for mid, _, _, _ in to_delete:
         try:
-            await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
+            await bot.delete_message(chat_id=group_chat_id, message_id=mid)
             await repo_clean.delete_record(group_chat_id, mid)
             deleted += 1
             await asyncio.sleep(0.05)
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after + 0.5)
         except TelegramForbiddenError:
-            await message.answer("❌ Нет прав удалять сообщения в группе (бот должен быть админом с Delete messages).")
-            return
+            return "❌ Нет прав удалять сообщения в группе (бот должен быть админом с Delete messages)."
         except TelegramBadRequest:
             skipped += 1
             await repo_clean.delete_record(group_chat_id, mid)
@@ -102,6 +104,6 @@ async def delete_limit_messages(message: Message):
             full_name=full_name,
         )
 
-    await message.answer(
+    return (
         f"Готово ✅ Удалено перелимита: {deleted}, кандидатов на блокировку: {len(limit_users)}, пропущено: {skipped}"
     )
