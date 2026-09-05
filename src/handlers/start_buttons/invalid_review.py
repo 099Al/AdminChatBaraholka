@@ -14,14 +14,9 @@ from aiogram.types import (
 
 from src.config import settings
 from src.database.repo.repo_clean import repo_clean
+from src.handlers.custom_messages import FORMAT_NOTICE
 
 router = Router()
-
-FORMAT_NOTICE = (
-    "Ваше объявление не по формату / не по правилам. "
-    "Объявление должно содержать цену, адрес и фото по возможности. "
-    "Пожалуйста, исправьте его и опубликуйте заново."
-)
 
 
 def _advertisement_keyboard(chat_id: int, message_id: int) -> InlineKeyboardMarkup:
