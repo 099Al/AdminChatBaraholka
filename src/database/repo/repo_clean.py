@@ -16,12 +16,61 @@ from src.database.models.model_clean import (
     MessageErrorModel,
     MessageFullTextModel,
     MessageModel,
+    ScheduledTaskRunModel,
     UserBannedModel,
     UserChatBindingModel,
 )
 
 
 class RepoClean:
+    async def upsert_scheduled_task_run(
+        self,
+        *,
+        task_key: str,
+        title: str,
+        last_run_at: str | None,
+        next_run_at: str | None,
+        last_status: str | None = None,
+    ) -> None:
+        stmt = insert(ScheduledTaskRunModel).values(
+            task_key=task_key,
+            title=title,
+            last_run_at=last_run_at,
+            next_run_at=next_run_at,
+            last_status=last_status,
+        ).on_conflict_do_update(
+            index_elements=[ScheduledTaskRunModel.task_key],
+            set_=dict(
+                title=title,
+                last_run_at=last_run_at,
+                next_run_at=next_run_at,
+                last_status=last_status,
+            ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def get_scheduled_task_runs(self) -> list[tuple[str, str, str | None, str | None, str | None]]:
+        stmt = (
+            select(
+                ScheduledTaskRunModel.task_key,
+                ScheduledTaskRunModel.title,
+                ScheduledTaskRunModel.last_run_at,
+                ScheduledTaskRunModel.next_run_at,
+                ScheduledTaskRunModel.last_status,
+            )
+            .order_by(ScheduledTaskRunModel.task_key.asc())
+        )
+
+        async with db.session() as session:
+            res = await session.execute(stmt)
+            return [
+                (str(task_key), str(title), last_run_at, next_run_at, last_status)
+                for task_key, title, last_run_at, next_run_at, last_status in res.all()
+            ]
+
     async def get_messages_older_than(self, before_ts: int) -> list[tuple[int, int]]:
         stmt = (
             select(MessageModel.chat_id, MessageModel.message_id)

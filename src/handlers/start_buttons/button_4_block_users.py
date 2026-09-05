@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import Message
 
@@ -56,10 +56,14 @@ async def block_banned_users(message: Message):
         await message.answer("Сначала в нужной группе напиши /bind")
         return
 
+    answer = await run_block_banned_users(message.bot, group_chat_id=group_chat_id)
+    await message.answer(answer)
+
+
+async def run_block_banned_users(bot: Bot, *, group_chat_id: int) -> str:
     rows = await repo_clean.get_banned_users()
     if not rows:
-        await message.answer("Нет пользователей для блокировки.")
-        return
+        return "Нет пользователей для блокировки."
 
     now = datetime.now(UTC_PLUS_5)
     blocked = 0
@@ -73,13 +77,13 @@ async def block_banned_users(message: Message):
         try:
             if is_blocked and blocked_until_current and blocked_until_current <= now:
                 if block_type == 4:
-                    await message.bot.unban_chat_member(
+                    await bot.unban_chat_member(
                         chat_id=group_chat_id,
                         user_id=banned_user_id,
                         only_if_banned=True,
                     )
                 else:
-                    await message.bot.restrict_chat_member(
+                    await bot.restrict_chat_member(
                         chat_id=group_chat_id,
                         user_id=banned_user_id,
                         permissions=_full_write_permissions(),
@@ -90,7 +94,7 @@ async def block_banned_users(message: Message):
                 continue
 
             if is_blocked and blocked_until_current and blocked_until_current > now:
-                member = await message.bot.get_chat_member(
+                member = await bot.get_chat_member(
                     chat_id=group_chat_id,
                     user_id=banned_user_id,
                 )
@@ -130,13 +134,13 @@ async def block_banned_users(message: Message):
 
             blocked_until_dt = now + timedelta(days=block_days)
             if block_type == 4:
-                await message.bot.ban_chat_member(
+                await bot.ban_chat_member(
                     chat_id=group_chat_id,
                     user_id=banned_user_id,
                     until_date=blocked_until_dt,
                 )
             else:
-                await message.bot.restrict_chat_member(
+                await bot.restrict_chat_member(
                     chat_id=group_chat_id,
                     user_id=banned_user_id,
                     permissions=_read_only_permissions(),
@@ -152,10 +156,9 @@ async def block_banned_users(message: Message):
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after + 0.5)
         except TelegramForbiddenError:
-            await message.answer(
+            return (
                 "Нет прав ограничивать пользователей. Сделай бота админом с правом Restrict/Ban users."
             )
-            return
         except TelegramBadRequest as e:
             skipped += 1
             skipped_reasons.append(f"{banned_user_id}: {e.message}")
@@ -166,4 +169,4 @@ async def block_banned_users(message: Message):
         if len(skipped_reasons) > 10:
             answer += f"\n...и еще {len(skipped_reasons) - 10}"
 
-    await message.answer(answer)
+    return answer

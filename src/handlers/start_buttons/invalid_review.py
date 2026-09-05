@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import (
     CallbackQuery,
@@ -58,6 +58,21 @@ async def send_noncompliant_messages_for_review(
     group_chat_id: int,
     rows: list[tuple[int, int, list[int], str, int | None, str | None]],
 ) -> tuple[int, int]:
+    return await send_noncompliant_messages_for_review_chat(
+        message.bot,
+        review_chat_id=message.chat.id,
+        group_chat_id=group_chat_id,
+        rows=rows,
+    )
+
+
+async def send_noncompliant_messages_for_review_chat(
+    bot: Bot,
+    *,
+    review_chat_id: int,
+    group_chat_id: int,
+    rows: list[tuple[int, int, list[int], str, int | None, str | None]],
+) -> tuple[int, int]:
     sent = 0
     skipped = 0
     seen_media_groups: set[str] = set()
@@ -73,8 +88,8 @@ async def send_noncompliant_messages_for_review(
             else _advertisement_keyboard(group_chat_id, message_id)
         )
         try:
-            await message.bot.copy_message(
-                chat_id=message.chat.id,
+            await bot.copy_message(
+                chat_id=review_chat_id,
                 from_chat_id=group_chat_id,
                 message_id=message_id,
                 reply_markup=keyboard,

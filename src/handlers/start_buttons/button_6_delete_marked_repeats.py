@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import Message
 
@@ -32,10 +32,14 @@ async def delete_marked_repeat_messages(message: Message):
         await message.answer("Сначала в нужной группе напиши /bind")
         return
 
+    answer = await run_delete_marked_repeat_messages(message.bot, group_chat_id=group_chat_id)
+    await message.answer(answer)
+
+
+async def run_delete_marked_repeat_messages(bot: Bot, *, group_chat_id: int) -> str:
     rows = await repo_clean.get_repeated_messages(group_chat_id)
     if not rows:
-        await message.answer("Помеченных повторных объявлений нет ✅")
-        return
+        return "Помеченных повторных объявлений нет ✅"
 
     deleted = 0
     skipped = 0
@@ -51,7 +55,7 @@ async def delete_marked_repeat_messages(message: Message):
             root_message_ids.add(mid)
 
         try:
-            await message.bot.delete_message(chat_id=group_chat_id, message_id=mid)
+            await bot.delete_message(chat_id=group_chat_id, message_id=mid)
             await repo_clean.delete_record(group_chat_id, mid)
             deleted += 1
             if mid not in root_message_ids:
@@ -62,8 +66,7 @@ async def delete_marked_repeat_messages(message: Message):
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after + 0.5)
         except TelegramForbiddenError:
-            await message.answer("❌ Нет прав удалять сообщения в группе (бот должен быть админом с Delete messages).")
-            return
+            return "❌ Нет прав удалять сообщения в группе (бот должен быть админом с Delete messages)."
         except TelegramBadRequest:
             skipped += 1
             await repo_clean.delete_record(group_chat_id, mid)
@@ -76,7 +79,7 @@ async def delete_marked_repeat_messages(message: Message):
     for user_id, (username, full_name) in deleted_users.items():
         await repo_clean.add_banned_user(user_id=user_id, username=username, full_name=full_name)
         try:
-            await message.bot.restrict_chat_member(
+            await bot.restrict_chat_member(
                 chat_id=group_chat_id,
                 user_id=user_id,
                 permissions=_read_only_permissions(),
@@ -94,7 +97,7 @@ async def delete_marked_repeat_messages(message: Message):
         except (TelegramBadRequest, TelegramForbiddenError):
             block_skipped += 1
 
-    await message.answer(
+    return (
         "Готово ✅ "
         f"Удалено повторных сообщений: {deleted - deleted_replies}, "
         f"ответов к ним: {deleted_replies}, "

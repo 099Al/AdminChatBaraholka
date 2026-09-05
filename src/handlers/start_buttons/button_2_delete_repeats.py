@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import CallbackQuery, Message
 
@@ -10,7 +10,10 @@ from src.constants import UTC_PLUS_5
 from src.database.repo.repo_clean import repo_clean
 from src.handlers.buttons_txt import button_2_txt
 from src.handlers.start_buttons.common import _answer_access_denied, _can_moderate
-from src.handlers.start_buttons.repeated_review_sender import delete_review_messages, send_repeated_messages_for_review
+from src.handlers.start_buttons.repeated_review_sender import (
+    delete_review_messages,
+    send_repeated_messages_for_review_chat,
+)
 
 router = Router()
 
@@ -42,14 +45,27 @@ async def find_repeat_messages(message: Message):
         await message.answer("Сначала в нужной группе напиши /bind")
         return
 
+    answer = await run_find_repeat_messages(
+        message.bot,
+        group_chat_id=group_chat_id,
+        review_chat_id=message.chat.id,
+    )
+    await message.answer(answer)
+
+
+async def run_find_repeat_messages(
+    bot: Bot,
+    *,
+    group_chat_id: int,
+    review_chat_id: int | None = None,
+) -> str:
     repeat_period = settings.access.repeat_period
     since_dt = datetime.now(UTC_PLUS_5) - timedelta(days=repeat_period)
     since_ts = int(since_dt.timestamp())
 
     rows = await repo_clean.get_messages_since(group_chat_id, since_ts)
     if not rows:
-        await message.answer(f"За {repeat_period} дн. нет сохранённых сообщений в БД.")
-        return
+        return f"За {repeat_period} дн. нет сохранённых сообщений в БД."
 
     grouped_rows: list[dict[str, object]] = []
 
@@ -108,18 +124,21 @@ async def find_repeat_messages(message: Message):
             seen_image_hashes.update(image_hash_set)
 
     if not repeat_message_ids_ordered:
-        await message.answer(f"Повторов за {repeat_period} дн. не найдено ✅")
-        return
+        return f"Повторов за {repeat_period} дн. не найдено ✅"
 
     await repo_clean.mark_messages_repeated(group_chat_id, repeat_message_ids_ordered)
 
-    if not settings.access.forward_repeated_messages:
-        await message.answer(f"Найдено и помечено повторных сообщений: {len(repeat_message_ids_ordered)}")
-        return
+    if not settings.access.forward_repeated_messages or review_chat_id is None:
+        return f"Найдено и помечено повторных сообщений: {len(repeat_message_ids_ordered)}"
 
-    copied, skipped = await send_repeated_messages_for_review(message, group_chat_id, repeat_message_groups)
+    copied, skipped = await send_repeated_messages_for_review_chat(
+        bot,
+        review_chat_id=review_chat_id,
+        group_chat_id=group_chat_id,
+        message_groups=repeat_message_groups,
+    )
 
-    await message.answer(
+    return (
         f"Найдено и помечено повторных сообщений: {len(repeat_message_ids_ordered)}. "
         f"Отправлено на проверку объявлений: {copied}, пропущено: {skipped}"
     )
