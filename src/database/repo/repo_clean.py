@@ -125,6 +125,84 @@ class RepoClean:
                 for message_id, message_type, errors, text_short, user_id, media_group_id in rows
             ]
 
+    async def get_format_notice_recipients(
+        self,
+        chat_id: int,
+        *,
+        sent_before: str,
+        limit: int = 500,
+    ) -> list[tuple[int, str | None, str | None]]:
+        stmt = (
+            select(
+                MessageModel.user_id,
+                MessageModel.username,
+                MessageModel.full_name,
+                MessageModel.message_type,
+                MessageModel.errors,
+                UserBannedModel.format_notice_sent_at,
+            )
+            .outerjoin(UserBannedModel, UserBannedModel.user_id == MessageModel.user_id)
+            .where(
+                MessageModel.chat_id == chat_id,
+                MessageModel.approved == 0,
+                MessageModel.user_id.is_not(None),
+                ~MessageModel.user_id.in_(ADMINS),
+                MessageModel.errors.is_not(None),
+                MessageModel.errors != "[]",
+                or_(
+                    UserBannedModel.format_notice_sent_at.is_(None),
+                    UserBannedModel.format_notice_sent_at == "",
+                    UserBannedModel.format_notice_sent_at <= sent_before,
+                ),
+            )
+            .order_by(MessageModel.date_ts.asc(), MessageModel.message_id.asc())
+            .limit(limit)
+        )
+        recipients: dict[int, tuple[str | None, str | None]] = {}
+
+        async with db.session() as session:
+            rows = (await session.execute(stmt)).all()
+
+        for user_id, username, full_name, message_type, errors, _ in rows:
+            if user_id is None or message_type == 4:
+                continue
+            try:
+                error_codes = [int(code) for code in json.loads(errors or "[]")]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if not error_codes or 4 in error_codes:
+                continue
+            recipients.setdefault(int(user_id), (username, full_name))
+
+        return [(user_id, username, full_name) for user_id, (username, full_name) in recipients.items()]
+
+    async def mark_format_notice_sent(
+        self,
+        user_id: int,
+        *,
+        sent_at: str,
+        username: str | None = None,
+        full_name: str | None = None,
+    ) -> None:
+        stmt = insert(UserBannedModel).values(
+            user_id=user_id,
+            created_at="",
+            format_notice_sent_at=sent_at,
+            username=username,
+            full_name=full_name,
+        ).on_conflict_do_update(
+            index_elements=[UserBannedModel.user_id],
+            set_=dict(
+                format_notice_sent_at=sent_at,
+                username=username,
+                full_name=full_name,
+            ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
     async def save_message_classifications(
         self,
         classifications: list[

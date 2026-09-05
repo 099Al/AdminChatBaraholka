@@ -145,6 +145,9 @@ async def init_db() -> None:
             await conn.execute(text("ALTER TABLE user_banned ADD COLUMN flood_count INTEGER DEFAULT 0"))
             await conn.execute(text("UPDATE user_banned SET flood_count = 0 WHERE flood_count IS NULL"))
 
+        if user_banned_columns and "format_notice_sent_at" not in user_banned_columns:
+            await conn.execute(text("ALTER TABLE user_banned ADD COLUMN format_notice_sent_at TEXT"))
+
         result = await conn.execute(text("PRAGMA table_info(messages)"))
         message_columns = {row[1] for row in result.fetchall()}
 
