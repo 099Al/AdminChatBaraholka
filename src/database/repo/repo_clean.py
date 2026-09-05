@@ -576,6 +576,13 @@ class RepoClean:
                     else_=UserBannedModel.blocked_until,
                 ),
                 UserBannedModel.block_type.key: case(
+                    (
+                        and_(
+                            flood_count >= settings.access.flood_messages_limit,
+                            UserBannedModel.block_type == 2,
+                        ),
+                        2,
+                    ),
                     (flood_count >= settings.access.flood_messages_limit, 3),
                     else_=UserBannedModel.block_type,
                 ),
@@ -945,6 +952,7 @@ class RepoClean:
         created_at = now.strftime("%Y-%m-%d %H:%M:%S")
         block_type = case(
             (UserBannedModel.block_type == 2, 2),
+            (UserBannedModel.block_type == 3, 3),
             else_=1,
         )
         stmt = insert(UserBannedModel).values(
@@ -975,6 +983,12 @@ class RepoClean:
     async def get_banned_users(
         self,
     ) -> list[tuple[int, str | None, str | None, str | None, str | None, int, int | None, int, int]]:
+        block_priority = case(
+            (UserBannedModel.block_type == 2, 3),
+            (UserBannedModel.block_type == 3, 2),
+            (UserBannedModel.block_type == 1, 1),
+            else_=0,
+        )
         stmt = (
             select(
                 UserBannedModel.user_id,
@@ -999,8 +1013,9 @@ class RepoClean:
                 )
             )
             .order_by(
-                UserBannedModel.block_type.desc(),
+                block_priority.desc(),
                 UserBannedModel.block_repeat_cnt.desc(),
+                UserBannedModel.flood_count.desc(),
                 UserBannedModel.block_limit.desc(),
                 UserBannedModel.user_id.asc(),
             )
