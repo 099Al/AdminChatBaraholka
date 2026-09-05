@@ -104,8 +104,10 @@ async def block_banned_users(message: Message):
 
             if block_type == 1:
                 block_days = settings.access.blocked_after_limit_days
-            elif block_type in (2, 3):
+            elif block_type == 2:
                 block_days = settings.access.blocked_after_repeat_days
+            elif block_type == 3:
+                block_days = settings.access.blocked_after_flood_days
             else:
                 skipped += 1
                 skipped_reasons.append(f"{banned_user_id}: не указан тип блокировки")
