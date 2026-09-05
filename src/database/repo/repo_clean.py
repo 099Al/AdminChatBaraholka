@@ -151,6 +151,10 @@ class RepoClean:
                 MessageModel.errors.is_not(None),
                 MessageModel.errors != "[]",
                 or_(
+                    UserBannedModel.user_id.is_(None),
+                    UserBannedModel.block_type.is_(None),
+                ),
+                or_(
                     UserBannedModel.format_notice_sent_at.is_(None),
                     UserBannedModel.format_notice_sent_at == "",
                     UserBannedModel.format_notice_sent_at <= sent_before,
@@ -195,6 +199,41 @@ class RepoClean:
             index_elements=[UserBannedModel.user_id],
             set_=dict(
                 format_notice_sent_at=sent_at,
+                username=username,
+                full_name=full_name,
+            ),
+        )
+
+        async with db.session() as session:
+            await session.execute(stmt)
+            await session.commit()
+
+    async def add_notice_failed_banned_user(
+        self,
+        user_id: int,
+        username: str | None = None,
+        full_name: str | None = None,
+    ) -> None:
+        now = datetime.now(UTC_PLUS_5).strftime("%Y-%m-%d %H:%M:%S")
+        block_type = case(
+            (UserBannedModel.block_type == 2, 2),
+            (UserBannedModel.block_type == 3, 3),
+            (UserBannedModel.block_type == 1, 1),
+            else_=4,
+        )
+        stmt = insert(UserBannedModel).values(
+            user_id=user_id,
+            created_at=now,
+            blocked_until=None,
+            block_type=4,
+            username=username,
+            full_name=full_name,
+        ).on_conflict_do_update(
+            index_elements=[UserBannedModel.user_id],
+            set_=dict(
+                created_at=now,
+                blocked_until=None,
+                block_type=block_type,
                 username=username,
                 full_name=full_name,
             ),
@@ -984,9 +1023,10 @@ class RepoClean:
         self,
     ) -> list[tuple[int, str | None, str | None, str | None, str | None, int, int | None, int, int]]:
         block_priority = case(
-            (UserBannedModel.block_type == 2, 3),
-            (UserBannedModel.block_type == 3, 2),
-            (UserBannedModel.block_type == 1, 1),
+            (UserBannedModel.block_type == 2, 4),
+            (UserBannedModel.block_type == 3, 3),
+            (UserBannedModel.block_type == 1, 2),
+            (UserBannedModel.block_type == 4, 1),
             else_=0,
         )
         stmt = (

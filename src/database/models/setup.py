@@ -80,6 +80,19 @@ async def init_db() -> None:
                 "WHERE block_type = 3"
             )
         )
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO block_types (block_type, name, description) "
+                "VALUES (4, 'notice_failed', 'Не удалось отправить уведомление')"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE block_types "
+                "SET name = 'notice_failed', description = 'Не удалось отправить уведомление' "
+                "WHERE block_type = 4"
+            )
+        )
 
         result = await conn.execute(text("PRAGMA table_info(admins)"))
         columns = {row[1] for row in result.fetchall()}

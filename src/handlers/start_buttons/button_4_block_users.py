@@ -39,6 +39,11 @@ def _is_write_restricted_member(member: object) -> bool:
     return getattr(member, "can_send_messages", True) is False
 
 
+def _is_banned_member(member: object) -> bool:
+    status = getattr(getattr(member, "status", ""), "value", getattr(member, "status", ""))
+    return str(status).lower() in {"banned", "kicked"}
+
+
 @router.message(F.text == button_8_txt)
 async def block_banned_users(message: Message):
     if not await _can_moderate(message):
@@ -67,11 +72,18 @@ async def block_banned_users(message: Message):
 
         try:
             if is_blocked and blocked_until_current and blocked_until_current <= now:
-                await message.bot.restrict_chat_member(
-                    chat_id=group_chat_id,
-                    user_id=banned_user_id,
-                    permissions=_full_write_permissions(),
-                )
+                if block_type == 4:
+                    await message.bot.unban_chat_member(
+                        chat_id=group_chat_id,
+                        user_id=banned_user_id,
+                        only_if_banned=True,
+                    )
+                else:
+                    await message.bot.restrict_chat_member(
+                        chat_id=group_chat_id,
+                        user_id=banned_user_id,
+                        permissions=_full_write_permissions(),
+                    )
                 await repo_clean.clear_user_block(banned_user_id)
                 unblocked += 1
                 await asyncio.sleep(0.05)
@@ -82,7 +94,8 @@ async def block_banned_users(message: Message):
                     chat_id=group_chat_id,
                     user_id=banned_user_id,
                 )
-                if not _is_write_restricted_member(member):
+                is_expected_block = _is_banned_member(member) if block_type == 4 else _is_write_restricted_member(member)
+                if not is_expected_block:
                     await repo_clean.clear_user_block(banned_user_id)
                     unblocked += 1
                     await asyncio.sleep(0.05)
@@ -108,18 +121,27 @@ async def block_banned_users(message: Message):
                 block_days = settings.access.blocked_after_repeat_days
             elif block_type == 3:
                 block_days = settings.access.blocked_after_flood_days
+            elif block_type == 4:
+                block_days = settings.access.blocked_after_limit_days
             else:
                 skipped += 1
                 skipped_reasons.append(f"{banned_user_id}: не указан тип блокировки")
                 continue
 
             blocked_until_dt = now + timedelta(days=block_days)
-            await message.bot.restrict_chat_member(
-                chat_id=group_chat_id,
-                user_id=banned_user_id,
-                permissions=_read_only_permissions(),
-                until_date=blocked_until_dt,
-            )
+            if block_type == 4:
+                await message.bot.ban_chat_member(
+                    chat_id=group_chat_id,
+                    user_id=banned_user_id,
+                    until_date=blocked_until_dt,
+                )
+            else:
+                await message.bot.restrict_chat_member(
+                    chat_id=group_chat_id,
+                    user_id=banned_user_id,
+                    permissions=_read_only_permissions(),
+                    until_date=blocked_until_dt,
+                )
             await repo_clean.set_user_blocked(
                 banned_user_id,
                 created_at=created_at,
